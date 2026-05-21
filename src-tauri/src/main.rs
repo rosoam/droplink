@@ -2,6 +2,7 @@
 
 mod discovery;
 mod protocol;
+mod relay_client;
 mod transfer;
 mod tray;
 
