@@ -15,6 +15,7 @@ dist-ssr
 
 # Rust build artifacts
 src-tauri/target/
+droplink-relay/target/
 
 # Editor directories and files
 .vscode/*
