@@ -1,6 +1,7 @@
 use crate::protocol::DeviceInfo;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use std::collections::HashMap;
+use std::net::IpAddr;
 use tokio::sync::mpsc;
 
 const SERVICE_TYPE: &str = "_droplink._tcp.local.";
@@ -57,7 +58,7 @@ impl Discovery {
                         if name == own_name {
                             continue;
                         }
-                        if let Some(addr) = info.get_addresses().iter().next() {
+                        if let Some(addr) = info.get_addresses().iter().find(|a| matches!(a, IpAddr::V4(_))) {
                             let device = DeviceInfo {
                                 name: name.clone(),
                                 ip: addr.to_string(),
