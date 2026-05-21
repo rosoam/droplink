@@ -20,7 +20,7 @@ export function useDevices() {
 
     const unlistenLost = listen<string>('device-lost', (event) => {
       setDevices((prev) =>
-        prev.filter((d) => !event.payload.includes(d.name))
+        prev.filter((d) => event.payload !== d.name)
       );
     });
 

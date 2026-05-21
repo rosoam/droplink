@@ -24,7 +24,11 @@ export function useTransfer() {
   const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Preserved across progress events — TransferProgress doesn't carry file_name
+    let currentFileName = '';
+
     const unlistenIncoming = listen<IncomingRequest>('incoming-transfer', (e) => {
+      currentFileName = e.payload.file_name;
       setIncoming(e.payload);
     });
 
@@ -32,7 +36,7 @@ export function useTransfer() {
       const p = e.payload;
       setActiveTransfer({
         transferId: p.transfer_id,
-        fileName: '',
+        fileName: currentFileName,
         fileSize: p.total,
         bytesDone: p.bytes_done,
         direction: p.direction,
@@ -41,8 +45,10 @@ export function useTransfer() {
 
     const unlistenComplete = listen<TransferComplete>('transfer-complete', (e) => {
       setLastComplete(e.payload);
+      setLastError(null);
       setActiveTransfer(null);
       setIncoming(null);
+      currentFileName = '';
     });
 
     const unlistenFailed = listen<TransferFailed>('transfer-failed', (e) => {
