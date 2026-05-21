@@ -8,6 +8,7 @@ mod tray;
 
 use discovery::{find_free_port, get_local_ip, Discovery, DiscoveryEvent};
 use protocol::DeviceInfo;
+use relay_client::RelayEvent;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, Mutex};
@@ -35,10 +36,12 @@ async fn send_file_to_device(
     let device_name = state.device_name.clone();
     tokio::spawn(async move {
         if let Err(reason) = send_file(device, file_path, event_tx.clone(), device_name).await {
-            let _ = event_tx.send(TransferEvent::Failed {
-                transfer_id: String::new(),
-                reason,
-            }).await;
+            let _ = event_tx
+                .send(TransferEvent::Failed {
+                    transfer_id: String::new(),
+                    reason,
+                })
+                .await;
         }
     });
     Ok(())
@@ -74,8 +77,7 @@ async fn main() {
             let local_ip = get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
             let port = find_free_port(7777, 7800).expect("No free port found");
 
-            let (transfer_event_tx, mut transfer_event_rx) =
-                mpsc::channel::<TransferEvent>(64);
+            let (transfer_event_tx, mut transfer_event_rx) = mpsc::channel::<TransferEvent>(64);
 
             let server = TransferServer::new(port, transfer_event_tx.clone());
             let pending_map = server.pending_map();
@@ -84,8 +86,8 @@ async fn main() {
                 server.start().await.expect("Transfer server failed");
             });
 
-            let discovery = Discovery::new(&device_name, &local_ip, port)
-                .expect("mDNS init failed");
+            let discovery =
+                Discovery::new(&device_name, &local_ip, port).expect("mDNS init failed");
 
             let devices: Arc<Mutex<Vec<DeviceInfo>>> = Arc::new(Mutex::new(Vec::new()));
             let devices_clone = devices.clone();
@@ -114,25 +116,68 @@ async fn main() {
                 }
             });
 
+            // Relay server — découverte cross-réseau
+            let relay_devices = devices.clone();
+            let relay_app = app_handle.clone();
+            let relay_name = device_name.clone();
+            let relay_ip = local_ip.clone();
+            let (relay_tx, mut relay_rx) = mpsc::channel::<RelayEvent>(32);
+
+            tauri::async_runtime::spawn(relay_client::connect_and_listen(
+                relay_name,
+                relay_ip,
+                port,
+                relay_tx,
+            ));
+
+            tauri::async_runtime::spawn(async move {
+                let mut known_relay_names: Vec<String> = Vec::new();
+
+                while let Some(event) = relay_rx.recv().await {
+                    match event {
+                        RelayEvent::DevicesUpdated(new_devices) => {
+                            let new_names: Vec<String> = new_devices.iter().map(|d| d.name.clone()).collect();
+
+                            let mut list = relay_devices.lock().await;
+
+                            for d in &new_devices {
+                                if !list.iter().any(|x: &DeviceInfo| x.name == d.name) {
+                                    list.push(d.clone());
+                                    let _ = relay_app.emit("device-discovered", d.clone());
+                                }
+                            }
+
+                            for name in &known_relay_names {
+                                if !new_names.contains(name) {
+                                    list.retain(|d| &d.name != name);
+                                    let _ = relay_app.emit("device-lost", name.clone());
+                                }
+                            }
+
+                            known_relay_names = new_names;
+                        }
+                        RelayEvent::Disconnected => {
+                            log::warn!("Relay disconnected");
+                        }
+                    }
+                }
+            });
+
             let app_handle_transfer = app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(event) = transfer_event_rx.recv().await {
                     match &event {
                         TransferEvent::IncomingRequest { .. } => {
-                            let _ =
-                                app_handle_transfer.emit("incoming-transfer", &event);
+                            let _ = app_handle_transfer.emit("incoming-transfer", &event);
                         }
                         TransferEvent::Progress { .. } => {
-                            let _ =
-                                app_handle_transfer.emit("transfer-progress", &event);
+                            let _ = app_handle_transfer.emit("transfer-progress", &event);
                         }
                         TransferEvent::Complete { .. } => {
-                            let _ =
-                                app_handle_transfer.emit("transfer-complete", &event);
+                            let _ = app_handle_transfer.emit("transfer-complete", &event);
                         }
                         TransferEvent::Failed { .. } => {
-                            let _ =
-                                app_handle_transfer.emit("transfer-failed", &event);
+                            let _ = app_handle_transfer.emit("transfer-failed", &event);
                         }
                     }
                 }
