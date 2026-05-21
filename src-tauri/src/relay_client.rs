@@ -1,3 +1,5 @@
+#![allow(dead_code)] // consumed in Task 4 (relay integration into main.rs)
+
 use crate::protocol::DeviceInfo;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -10,7 +12,11 @@ pub const RELAY_URL: &str = "wss://droplink-relay.fly.dev/ws";
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ClientMsg<'a> {
-    Register { name: &'a str, ip: &'a str, port: u16 },
+    Register {
+        name: &'a str,
+        ip: &'a str,
+        port: u16,
+    },
 }
 
 #[derive(Deserialize)]
