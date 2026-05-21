@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: ''
+          - platform: windows-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'DropLink ${{ github.ref_name }}'
+          releaseBody: |
+            ## DropLink ${{ github.ref_name }}
+
+            ### Téléchargements
+            - **macOS** (Apple Silicon) : `.dmg`
+            - **Windows** : `.msi`
+
+            ### Installation
+            - macOS : ouvrir le `.dmg`, glisser dans Applications
+            - Windows : double-cliquer le `.msi`, suivre l'installeur
+
+            > Les deux machines doivent être sur le même réseau Wi-Fi ou câblé.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
