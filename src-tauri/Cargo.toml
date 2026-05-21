@@ -2,7 +2,7 @@
 name = "droplink"
 version = "0.1.0"
 description = "DropLink — P2P LAN file sharing"
-authors = ["you"]
+authors = ["Romario Sobreira"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
