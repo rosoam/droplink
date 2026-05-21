@@ -3,6 +3,7 @@
 
 mod discovery;
 mod protocol;
+mod transfer;
 
 fn main() {
     droplink_lib::run()
