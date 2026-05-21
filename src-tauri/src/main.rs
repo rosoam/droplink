@@ -1,11 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod device_registry;
 mod discovery;
 mod protocol;
 mod relay_client;
 mod transfer;
 mod tray;
 
+use device_registry::{key as device_key, DeviceRegistry, Source};
 use discovery::{find_free_port, get_local_ip, Discovery, DiscoveryEvent};
 use protocol::DeviceInfo;
 use relay_client::RelayEvent;
@@ -15,7 +17,7 @@ use tokio::sync::{mpsc, Mutex};
 use transfer::{send_file, PendingMap, TransferEvent, TransferServer};
 
 struct AppState {
-    devices: Arc<Mutex<Vec<DeviceInfo>>>,
+    devices: Arc<Mutex<DeviceRegistry>>,
     pending_transfers: PendingMap,
     device_name: String,
     event_tx: mpsc::Sender<TransferEvent>,
@@ -23,7 +25,7 @@ struct AppState {
 
 #[tauri::command]
 async fn get_devices(state: State<'_, Arc<AppState>>) -> Result<Vec<DeviceInfo>, String> {
-    Ok(state.devices.lock().await.clone())
+    Ok(state.devices.lock().await.snapshot())
 }
 
 #[tauri::command]
@@ -89,34 +91,58 @@ async fn main() {
             let discovery =
                 Discovery::new(&device_name, &local_ip, port).expect("mDNS init failed");
 
-            let devices: Arc<Mutex<Vec<DeviceInfo>>> = Arc::new(Mutex::new(Vec::new()));
-            let devices_clone = devices.clone();
+            let devices: Arc<Mutex<DeviceRegistry>> = Arc::new(Mutex::new(DeviceRegistry::new()));
 
             let (disc_tx, mut disc_rx) = mpsc::channel::<DiscoveryEvent>(32);
             discovery
                 .start_browsing(disc_tx)
                 .expect("mDNS browse failed");
 
+            let mdns_devices = devices.clone();
             let app_handle_disc = app_handle.clone();
             tauri::async_runtime::spawn(async move {
+                // Map mDNS fullname → registry id (ip:port) so DeviceLost can resolve.
+                let mut fullname_to_id: std::collections::HashMap<String, String> =
+                    std::collections::HashMap::new();
+
                 while let Some(event) = disc_rx.recv().await {
-                    let mut list = devices_clone.lock().await;
                     match event {
                         DiscoveryEvent::DeviceFound(d) => {
-                            if !list.iter().any(|x| x.name == d.name) {
-                                list.push(d.clone());
-                                let _ = app_handle_disc.emit("device-discovered", d);
+                            let id = device_key(&d);
+                            let device_clone = d.clone();
+                            let added = {
+                                let mut reg = mdns_devices.lock().await;
+                                reg.add(d, Source::Mdns)
+                            };
+                            // Track the most recent fullname mapping for this id; mDNS doesn't
+                            // expose fullname here, so we approximate via "name.<service>".
+                            fullname_to_id.insert(format!("{}.", device_clone.name), id.clone());
+                            if let Some(dev) = added {
+                                let _ = app_handle_disc.emit("device-discovered", dev);
                             }
                         }
                         DiscoveryEvent::DeviceLost(fullname) => {
-                            list.retain(|d| !fullname.starts_with(&format!("{}.", d.name)));
-                            let _ = app_handle_disc.emit("device-lost", fullname);
+                            // Find any id whose tracked fullname is a prefix of the lost fullname.
+                            let id = fullname_to_id
+                                .iter()
+                                .find(|(prefix, _)| fullname.starts_with(prefix.as_str()))
+                                .map(|(p, id)| (p.clone(), id.clone()));
+                            if let Some((prefix, id)) = id {
+                                fullname_to_id.remove(&prefix);
+                                let lost = {
+                                    let mut reg = mdns_devices.lock().await;
+                                    reg.remove(&id, Source::Mdns)
+                                };
+                                if let Some(name) = lost {
+                                    let _ = app_handle_disc.emit("device-lost", name);
+                                }
+                            }
                         }
                     }
                 }
             });
 
-            // Relay server — découverte cross-réseau
+            // Relay server — découverte cross-réseau (même IP publique)
             let relay_devices = devices.clone();
             let relay_app = app_handle.clone();
             let relay_name = device_name.clone();
@@ -124,40 +150,49 @@ async fn main() {
             let (relay_tx, mut relay_rx) = mpsc::channel::<RelayEvent>(32);
 
             tauri::async_runtime::spawn(relay_client::connect_and_listen(
-                relay_name,
-                relay_ip,
-                port,
-                relay_tx,
+                relay_name, relay_ip, port, relay_tx,
             ));
 
             tauri::async_runtime::spawn(async move {
-                let mut known_relay_names: Vec<String> = Vec::new();
-
                 while let Some(event) = relay_rx.recv().await {
                     match event {
                         RelayEvent::DevicesUpdated(new_devices) => {
-                            let new_names: Vec<String> = new_devices.iter().map(|d| d.name.clone()).collect();
+                            let new_ids: std::collections::HashSet<String> =
+                                new_devices.iter().map(device_key).collect();
 
-                            let mut list = relay_devices.lock().await;
-
-                            for d in &new_devices {
-                                if !list.iter().any(|x: &DeviceInfo| x.name == d.name) {
-                                    list.push(d.clone());
-                                    let _ = relay_app.emit("device-discovered", d.clone());
+                            let (added_list, lost_names) = {
+                                let mut reg = relay_devices.lock().await;
+                                let prev_ids = reg.ids_for_source(Source::Relay);
+                                let mut added = Vec::new();
+                                for d in new_devices {
+                                    if let Some(dev) = reg.add(d, Source::Relay) {
+                                        added.push(dev);
+                                    }
                                 }
-                            }
-
-                            for name in &known_relay_names {
-                                if !new_names.contains(name) {
-                                    list.retain(|d| &d.name != name);
-                                    let _ = relay_app.emit("device-lost", name.clone());
+                                let mut lost = Vec::new();
+                                for id in prev_ids.difference(&new_ids) {
+                                    if let Some(name) = reg.remove(id, Source::Relay) {
+                                        lost.push(name);
+                                    }
                                 }
+                                (added, lost)
+                            };
+                            for d in added_list {
+                                let _ = relay_app.emit("device-discovered", d);
                             }
-
-                            known_relay_names = new_names;
+                            for name in lost_names {
+                                let _ = relay_app.emit("device-lost", name);
+                            }
                         }
                         RelayEvent::Disconnected => {
                             log::warn!("Relay disconnected");
+                            let lost = {
+                                let mut reg = relay_devices.lock().await;
+                                reg.purge_source(Source::Relay)
+                            };
+                            for name in lost {
+                                let _ = relay_app.emit("device-lost", name);
+                            }
                         }
                     }
                 }
