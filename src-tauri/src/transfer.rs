@@ -112,6 +112,14 @@ async fn handle_incoming(
         _ => return,
     };
 
+    // Insert into pending BEFORE notifying frontend to avoid race condition
+    // where frontend responds before the entry exists in pending map.
+    let (decision_tx, decision_rx) = tokio::sync::oneshot::channel::<bool>();
+    pending
+        .lock()
+        .await
+        .insert(transfer_id.clone(), decision_tx);
+
     // Notify frontend — user must accept/refuse
     let _ = event_tx
         .send(TransferEvent::IncomingRequest {
@@ -123,12 +131,6 @@ async fn handle_incoming(
         .await;
 
     // Wait for user decision (10s timeout)
-    let (decision_tx, decision_rx) = tokio::sync::oneshot::channel::<bool>();
-    pending
-        .lock()
-        .await
-        .insert(transfer_id.clone(), decision_tx);
-
     let accepted = tokio::time::timeout(
         std::time::Duration::from_secs(10),
         decision_rx,
@@ -136,6 +138,9 @@ async fn handle_incoming(
     .await
     .unwrap_or(Ok(false))
     .unwrap_or(false);
+
+    // Clean up pending entry in all cases (timeout or decision)
+    pending.lock().await.remove(&transfer_id);
 
     if !accepted {
         let refuse = serde_json::to_string(&Message::Refuse {
@@ -186,7 +191,16 @@ async fn handle_incoming(
             Ok(0) => break,
             Ok(n) => {
                 hasher.update(&buf[..n]);
-                let _ = file.write_all(&buf[..n]).await;
+                if let Err(e) = file.write_all(&buf[..n]).await {
+                    let _ = event_tx
+                        .send(TransferEvent::Failed {
+                            transfer_id: transfer_id.clone(),
+                            reason: format!("Write error: {}", e),
+                        })
+                        .await;
+                    let _ = tokio::fs::remove_file(&dest_path).await;
+                    return;
+                }
                 bytes_done += n as u64;
 
                 let _ = event_tx
@@ -294,6 +308,12 @@ pub async fn send_file(
 
     match response {
         Message::Refuse { .. } => {
+            let _ = event_tx
+                .send(TransferEvent::Failed {
+                    transfer_id: transfer_id.clone(),
+                    reason: "Refusé par le destinataire".to_string(),
+                })
+                .await;
             return Err("Refused".to_string());
         }
         Message::Accept { .. } => {}

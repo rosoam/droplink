@@ -23,8 +23,6 @@ pub enum Message {
     Refuse {
         transfer_id: String,
     },
-    Done,
-    DoneAck,
     Error {
         reason: String,
     },
