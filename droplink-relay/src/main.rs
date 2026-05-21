@@ -10,7 +10,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
-use tokio::sync::{mpsc::UnboundedSender, Mutex};
+use tokio::sync::Mutex;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct PeerInfo {
@@ -33,7 +33,7 @@ enum ServerMsg {
 
 struct PeerSlot {
     info: PeerInfo,
-    tx: UnboundedSender<String>,
+    tx: tokio::sync::mpsc::Sender<String>,
 }
 
 type RoomMap = Arc<Mutex<HashMap<String, Vec<PeerSlot>>>>;
@@ -60,9 +60,16 @@ async fn main() {
 async fn ws_handler(
     ws: WebSocketUpgrade,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: axum::http::HeaderMap,
     State(rooms): State<RoomMap>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, addr, rooms))
+    let public_ip = headers
+        .get("fly-client-ip")
+        .or_else(|| headers.get("x-forwarded-for"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
+        .unwrap_or_else(|| addr.ip().to_string());
+    ws.on_upgrade(move |socket| handle_socket(socket, public_ip, rooms))
 }
 
 async fn broadcast_room(room: &[PeerSlot]) {
@@ -74,14 +81,13 @@ async fn broadcast_room(room: &[PeerSlot]) {
             .cloned()
             .collect();
         let msg = serde_json::to_string(&ServerMsg::RoomUpdate { devices: others }).unwrap();
-        let _ = slot.tx.send(msg);
+        let _ = slot.tx.send(msg).await;
     }
 }
 
-async fn handle_socket(socket: WebSocket, addr: SocketAddr, rooms: RoomMap) {
-    let public_ip = addr.ip().to_string();
+async fn handle_socket(socket: WebSocket, public_ip: String, rooms: RoomMap) {
     let (mut ws_write, mut ws_read) = socket.split();
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
     let mut my_name: Option<String> = None;
 
     // Writer task
