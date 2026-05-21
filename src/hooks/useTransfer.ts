@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type {
@@ -22,13 +22,11 @@ export function useTransfer() {
   const [activeTransfer, setActiveTransfer] = useState<ActiveTransfer | null>(null);
   const [lastComplete, setLastComplete] = useState<TransferComplete | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+  const currentFileNameRef = useRef<string>('');
 
   useEffect(() => {
-    // Preserved across progress events — TransferProgress doesn't carry file_name
-    let currentFileName = '';
-
     const unlistenIncoming = listen<IncomingRequest>('incoming-transfer', (e) => {
-      currentFileName = e.payload.file_name;
+      currentFileNameRef.current = e.payload.file_name;
       setIncoming(e.payload);
     });
 
@@ -36,7 +34,7 @@ export function useTransfer() {
       const p = e.payload;
       setActiveTransfer({
         transferId: p.transfer_id,
-        fileName: currentFileName,
+        fileName: currentFileNameRef.current,
         fileSize: p.total,
         bytesDone: p.bytes_done,
         direction: p.direction,
@@ -48,7 +46,7 @@ export function useTransfer() {
       setLastError(null);
       setActiveTransfer(null);
       setIncoming(null);
-      currentFileName = '';
+      currentFileNameRef.current = '';
     });
 
     const unlistenFailed = listen<TransferFailed>('transfer-failed', (e) => {
@@ -67,7 +65,12 @@ export function useTransfer() {
 
   const sendFile = useCallback(async (device: Device, filePath: string) => {
     setLastError(null);
-    await invoke('send_file_to_device', { device, filePath });
+    currentFileNameRef.current = filePath.split('/').pop() ?? filePath;
+    try {
+      await invoke('send_file_to_device', { device, filePath });
+    } catch (e) {
+      setLastError(String(e));
+    }
   }, []);
 
   const respondTransfer = useCallback(

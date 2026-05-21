@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useDevices } from './hooks/useDevices';
 import { useTransfer } from './hooks/useTransfer';
 import { DeviceList } from './components/DeviceList';
@@ -21,6 +21,12 @@ export default function App() {
     },
     [sendFile]
   );
+
+  useEffect(() => {
+    if (selectedDevice && !devices.some((d) => d.name === selectedDevice.name)) {
+      setSelectedDevice(null);
+    }
+  }, [devices, selectedDevice]);
 
   return (
     <div className="bg-gray-900 text-white min-h-screen flex flex-col select-none">
@@ -53,7 +59,7 @@ export default function App() {
 
         {lastComplete && (
           <div className="rounded-lg bg-green-900/40 border border-green-700 px-3 py-2 text-sm text-green-300">
-            ✓ {lastComplete.file_name} reçu dans ~/Downloads/DropLink
+            ✓ {lastComplete.file_name} — transfert terminé
           </div>
         )}
 
