@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { Device } from '../types';
 
 interface Props {
@@ -9,19 +9,28 @@ interface Props {
 
 export function DropZone({ selectedDevice, onFilesDropped, disabled }: Props) {
   const [isDragging, setIsDragging] = useState(false);
+  // Counter prevents flicker when dragover moves through child elements
+  const dragCounter = useRef(0);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current += 1;
     if (!disabled) setIsDragging(true);
   }, [disabled]);
 
   const handleDragLeave = useCallback(() => {
-    setIsDragging(false);
+    dragCounter.current -= 1;
+    if (dragCounter.current === 0) setIsDragging(false);
   }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
+      dragCounter.current = 0;
       setIsDragging(false);
       if (!selectedDevice || disabled) return;
 
@@ -42,7 +51,10 @@ export function DropZone({ selectedDevice, onFilesDropped, disabled }: Props) {
 
   return (
     <div
+      role="region"
+      aria-label="Zone de dépôt"
       onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
