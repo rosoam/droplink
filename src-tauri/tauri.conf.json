@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "droplink",
+  "productName": "DropLink",
   "version": "0.1.0",
-  "identifier": "com.rso.droplink",
+  "identifier": "com.droplink.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "droplink",
-        "width": 800,
-        "height": 600
+        "title": "DropLink",
+        "width": 320,
+        "height": 500,
+        "resizable": false,
+        "decorations": true
       }
     ]
   },
