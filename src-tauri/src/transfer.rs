@@ -112,6 +112,16 @@ async fn handle_incoming(
         _ => return,
     };
 
+    const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024 * 1024; // 10 GB
+    if file_size > MAX_FILE_SIZE {
+        let error_msg = serde_json::to_string(&Message::Error {
+            reason: "File too large".to_string(),
+        }).unwrap_or_default();
+        let _ = writer.write_all(format!("{}\n", error_msg).as_bytes()).await;
+        let _ = writer.flush().await;
+        return;
+    }
+
     // Insert into pending BEFORE notifying frontend to avoid race condition
     // where frontend responds before the entry exists in pending map.
     let (decision_tx, decision_rx) = tokio::sync::oneshot::channel::<bool>();
@@ -357,15 +367,11 @@ pub async fn send_file(
 }
 
 fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
+    let no_separators: String = name.chars()
+        .filter(|&c| c != '/' && c != '\\' && c != '\0')
+        .collect();
+    let trimmed = no_separators.trim_start_matches('.');
+    if trimmed.is_empty() { "file".to_string() } else { trimmed.to_string() }
 }
 
 fn unique_path(dir: &Path, name: &str) -> std::path::PathBuf {
@@ -399,8 +405,11 @@ mod tests {
     #[test]
     fn test_sanitize_filename() {
         assert_eq!(sanitize_filename("photo.jpg"), "photo.jpg");
-        assert_eq!(sanitize_filename("my file/path.png"), "my_file_path.png");
-        assert_eq!(sanitize_filename("../evil.sh"), ".._evil.sh");
+        assert_eq!(sanitize_filename("../../../evil"), "evil");
+        assert_eq!(sanitize_filename("café.jpg"), "café.jpg");
+        assert_eq!(sanitize_filename("写真.png"), "写真.png");
+        assert_eq!(sanitize_filename("file/path.txt"), "filepath.txt");
+        assert_eq!(sanitize_filename(""), "file");
     }
 
     #[test]

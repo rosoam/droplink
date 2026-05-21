@@ -33,7 +33,12 @@ async fn send_file_to_device(
     let event_tx = state.event_tx.clone();
     let device_name = state.device_name.clone();
     tokio::spawn(async move {
-        let _ = send_file(device, file_path, event_tx, device_name).await;
+        if let Err(reason) = send_file(device, file_path, event_tx.clone(), device_name).await {
+            let _ = event_tx.send(TransferEvent::Failed {
+                transfer_id: String::new(),
+                reason,
+            }).await;
+        }
     });
     Ok(())
 }
@@ -101,7 +106,7 @@ async fn main() {
                             }
                         }
                         DiscoveryEvent::DeviceLost(fullname) => {
-                            list.retain(|d| !fullname.contains(&d.name));
+                            list.retain(|d| !fullname.starts_with(&format!("{}.", d.name)));
                             let _ = app_handle_disc.emit("device-lost", fullname);
                         }
                     }
