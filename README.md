@@ -49,6 +49,11 @@ cargo xtask bundle-msi    # Windows .msi via cargo-wix
 
 ---
 
+## iOS
+
+Le portage iOS natif (même code Rust, rendu wgpu/Metal, Bonjour + picker Swift) est décrit dans
+[`docs/IOS.md`](docs/IOS.md) : prérequis, signature, build et installation sur un iPhone.
+
 ## Développement
 
 ```bash

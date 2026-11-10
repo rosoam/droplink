@@ -1,0 +1,16 @@
+[package]
+name = "droplink-ios"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "iOS FFI shim for DropLink"
+
+[lib]
+name = "droplink_ios"
+crate-type = ["staticlib"]
+
+[dependencies]
+droplink-app = { path = "../droplink-app", version = "1.0.0" }
+droplink-ios-bridge = { path = "../droplink-ios-bridge", version = "1.0.0" }

@@ -20,6 +20,7 @@ impl Paths {
     }
 }
 
+#[cfg(not(target_os = "ios"))]
 pub fn default_paths() -> Paths {
     let dir = directories::ProjectDirs::from("com", "droplink", "DropLink")
         .map(|dirs| dirs.config_dir().to_path_buf())
@@ -27,13 +28,34 @@ pub fn default_paths() -> Paths {
     Paths { dir }
 }
 
+#[cfg(target_os = "ios")]
+pub fn default_paths() -> Paths {
+    Paths {
+        dir: ios_home().join("Library/Application Support/DropLink"),
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn ios_home() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 fn default_config() -> Config {
+    #[cfg(not(target_os = "ios"))]
     let name = hostname::get()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|_| "DropLink".to_string());
+    #[cfg(target_os = "ios")]
+    let name = "iPhone".to_string();
+
+    #[cfg(not(target_os = "ios"))]
     let receive_dir = directories::UserDirs::new()
         .and_then(|dirs| dirs.download_dir().map(|dir| dir.join("DropLink")))
         .unwrap_or_else(|| PathBuf::from("DropLink"));
+    #[cfg(target_os = "ios")]
+    let receive_dir = ios_home().join("Documents/DropLink");
     let name: String = name.chars().take(64).collect();
     Config::new(
         droplink_core::config::generate_device_id(),

@@ -22,6 +22,10 @@ pub struct App {
     settings_error: Option<String>,
     picker: Option<std_mpsc::Receiver<Option<PathBuf>>>,
     _discovery: Option<DiscoveryHandle>,
+    #[cfg(target_os = "ios")]
+    ios_port: u16,
+    #[cfg(target_os = "ios")]
+    ios_started: bool,
     theme_applied: bool,
 }
 
@@ -50,33 +54,91 @@ impl App {
         let mut state = UiState::new(config.history_len);
         state.history = store::load_history(&paths);
 
-        let (dtx, mut drx) = mpsc::channel(64);
-        let spec = advert_for(&config.device_id, &config.device_name, bound.port);
-        if spec.is_none() {
-            state.discovery_available = false;
-            tracing::warn!("no advertisable IPv4, mDNS disabled");
-        }
-        let discovery = rt
-            .block_on(async { DiscoveryHandle::start(spec, dtx) })
-            .ok();
-        if discovery.is_some() {
-            let handle = handle.clone();
-            rt.spawn(async move {
-                while let Some(event) = drx.recv().await {
-                    match event {
-                        DiscoveryEvent::Found(peer) => handle.command(Command::PeerSeen {
+        let discovery = {
+            let (dtx, mut drx) = mpsc::channel(64);
+            let spec = advert_for(&config.device_id, &config.device_name, bound.port);
+            if spec.is_none() {
+                state.discovery_available = false;
+                tracing::warn!("no advertisable IPv4, mDNS disabled");
+            }
+            let discovery = rt
+                .block_on(async { DiscoveryHandle::start(spec, dtx) })
+                .ok();
+            if discovery.is_none() {
+                state.discovery_available = false;
+                tracing::warn!("mdns unavailable, discovery disabled");
+            }
+            if discovery.is_some() {
+                let handle = handle.clone();
+                rt.spawn(async move {
+                    while let Some(event) = drx.recv().await {
+                        match event {
+                            DiscoveryEvent::Found(peer) => {
+                                tracing::info!(alias = %peer.alias, "peer discovered");
+                                handle.command(Command::PeerSeen {
+                                    peer,
+                                    source: Source::Mdns,
+                                })
+                            }
+                            DiscoveryEvent::Lost(key) => {
+                                tracing::info!(?key, "peer lost");
+                                handle.command(Command::PeerGone {
+                                    key,
+                                    source: Source::Mdns,
+                                })
+                            }
+                            DiscoveryEvent::Unavailable => {
+                                tracing::warn!("discovery unavailable");
+                            }
+                        }
+                    }
+                });
+            }
+            discovery
+        };
+
+        #[cfg(target_os = "ios")]
+        {
+            use droplink_core::peer::{Peer, PeerKey, Reach};
+            let commands = handle.command_sender();
+            droplink_ios_bridge::set_peer_handler(move |event| match event {
+                droplink_ios_bridge::PeerEvent::Found {
+                    device_id,
+                    alias,
+                    ip,
+                    port,
+                } => {
+                    if let Ok(ip) = ip.parse() {
+                        tracing::info!(%alias, %ip, port, "ios peer discovered");
+                        let peer = Peer {
+                            device_id: Some(device_id),
+                            alias,
+                            reach: Reach::Direct { ip, port },
+                        };
+                        let _ = commands.try_send(Command::PeerSeen {
                             peer,
                             source: Source::Mdns,
-                        }),
-                        DiscoveryEvent::Lost(key) => handle.command(Command::PeerGone {
-                            key,
-                            source: Source::Mdns,
-                        }),
-                        DiscoveryEvent::Unavailable => {}
+                        });
                     }
                 }
+                droplink_ios_bridge::PeerEvent::Lost { device_id } => {
+                    let _ = commands.try_send(Command::PeerGone {
+                        key: PeerKey::Direct(device_id),
+                        source: Source::Mdns,
+                    });
+                }
             });
+            tracing::info!(port = bound.port, "ios bonjour configured");
         }
+
+        let discovery_available = discovery.is_some();
+
+        tracing::info!(
+            port = bound.port,
+            discovery = discovery_available,
+            relay = config.relay_enabled,
+            "droplink started"
+        );
 
         let settings = ui::settings::SettingsDraft::from_config(&config);
 
@@ -91,6 +153,10 @@ impl App {
             settings_error: None,
             picker: None,
             _discovery: discovery,
+            #[cfg(target_os = "ios")]
+            ios_port: bound.port,
+            #[cfg(target_os = "ios")]
+            ios_started: false,
             theme_applied: false,
         })
     }
@@ -111,6 +177,7 @@ impl App {
         }
     }
 
+    #[cfg(not(target_os = "ios"))]
     fn open_picker(&mut self) {
         let (tx, rx) = std_mpsc::channel();
         std::thread::spawn(move || {
@@ -118,6 +185,11 @@ impl App {
             let _ = tx.send(file);
         });
         self.picker = Some(rx);
+    }
+
+    #[cfg(target_os = "ios")]
+    fn open_picker(&mut self) {
+        droplink_ios_bridge::pick_file();
     }
 
     fn poll_picker(&mut self) {
@@ -166,6 +238,41 @@ impl eframe::App for App {
         }
         self.drain_events();
         self.poll_picker();
+
+        #[cfg(target_os = "ios")]
+        {
+            if !self.ios_started {
+                let ip = droplink_net::discovery::select_advertisable_ip(
+                    &droplink_net::discovery::system_interfaces(),
+                )
+                .map(|ip| ip.to_string())
+                .unwrap_or_else(|| "127.0.0.1".to_string());
+                droplink_ios_bridge::start_bonjour(
+                    self.ios_port,
+                    &self.config.device_id,
+                    &self.config.device_name,
+                    &ip,
+                );
+                self.ios_started = true;
+            }
+            let picked = droplink_ios_bridge::take_picked_files();
+            if !picked.is_empty() {
+                match self.state.selected_peer().cloned() {
+                    Some(peer) => {
+                        for path in picked {
+                            self.dispatch(UiAction::Send {
+                                peer: peer.clone(),
+                                path,
+                            });
+                        }
+                    }
+                    None => {
+                        self.state.last_error =
+                            Some("Sélectionne un appareil avant d'envoyer".into());
+                    }
+                }
+            }
+        }
 
         let dropped: Vec<PathBuf> = ctx.input(|input| {
             input

@@ -349,6 +349,11 @@ impl EngineHandle {
     pub fn port(&self) -> u16 {
         self.port
     }
+
+    /// Clone of the command channel, for platform bridges (iOS Bonjour callbacks).
+    pub fn command_sender(&self) -> mpsc::Sender<Command> {
+        self.commands.clone()
+    }
 }
 
 /// Start the transfer engine. Must be called from within a Tokio runtime.

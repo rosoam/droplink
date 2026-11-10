@@ -19,3 +19,9 @@
 
 # Fuzz logs
 /fuzz/*.log
+
+# iOS build outputs
+/ios/build
+/ios/build-device
+/ios/lib
+/ios/DropLink.xcodeproj

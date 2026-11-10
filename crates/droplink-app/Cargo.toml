@@ -5,7 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "DropLink native desktop app"
+description = "DropLink native desktop and iOS app"
+
+[lib]
+name = "droplink_app"
+crate-type = ["rlib"]
 
 [[bin]]
 name = "droplink"
@@ -14,17 +18,24 @@ path = "src/main.rs"
 [dependencies]
 droplink-core = { path = "../droplink-core", version = "1.0.0" }
 droplink-net = { path = "../droplink-net", version = "1.0.0" }
-eframe.workspace = true
 egui.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
-rfd.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 directories.workspace = true
 hostname.workspace = true
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+eframe.workspace = true
+rfd.workspace = true
+
+[target.'cfg(target_os = "ios")'.dependencies]
+eframe = { version = "0.33", default-features = false, features = ["wgpu", "default_fonts"] }
+wgpu = { version = "27", features = ["metal"] }
+droplink-ios-bridge = { path = "../droplink-ios-bridge", version = "1.0.0" }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -59,10 +59,12 @@ impl DiscoveryHandle {
         daemon
             .register(service)
             .map_err(|e| Error::Protocol(e.to_string()))?;
+        tracing::info!(port = spec.port, "mdns service registered");
 
         let receiver = daemon
             .browse(SERVICE_TYPE)
             .map_err(|e| Error::Protocol(e.to_string()))?;
+        tracing::info!("mdns browse started");
 
         let own_id = spec.device_id.clone();
         let event_tx = events.clone();
@@ -218,6 +220,8 @@ fn build_service(spec: &AdvertSpec) -> Result<(String, ServiceInfo)> {
     properties.insert("id".to_string(), spec.device_id.clone());
     properties.insert("alias".to_string(), spec.alias.clone());
     properties.insert("v".to_string(), PROTOCOL_VERSION.to_string());
+    properties.insert("ip".to_string(), spec.ip.to_string());
+    properties.insert("port".to_string(), spec.port.to_string());
 
     let service = ServiceInfo::new(
         SERVICE_TYPE,

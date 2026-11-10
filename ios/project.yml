@@ -1,0 +1,85 @@
+name: DropLink
+options:
+  bundleIdPrefix: com.droplink
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.droplink.desktop
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: 8R2MC75QS5
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+
+targets:
+  DropLink:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        INFOPLIST_FILE: Sources/Info.plist
+        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/lib"
+        OTHER_LDFLAGS:
+          - "-ldroplink_ios"
+          - "-framework"
+          - "Foundation"
+          - "-framework"
+          - "UIKit"
+          - "-framework"
+          - "CoreFoundation"
+          - "-framework"
+          - "CoreGraphics"
+          - "-framework"
+          - "CoreText"
+          - "-framework"
+          - "CoreVideo"
+          - "-framework"
+          - "CoreMedia"
+          - "-framework"
+          - "QuartzCore"
+          - "-framework"
+          - "Metal"
+          - "-framework"
+          - "MetalKit"
+          - "-framework"
+          - "Security"
+          - "-framework"
+          - "SystemConfiguration"
+          - "-framework"
+          - "CoreServices"
+          - "-framework"
+          - "ImageIO"
+          - "-framework"
+          - "UniformTypeIdentifiers"
+          - "-framework"
+          - "IOSurface"
+          - "-framework"
+          - "AVFoundation"
+          - "-framework"
+          - "AudioToolbox"
+          - "-liconv"
+          - "-lobjc"
+          - "-lc++"
+          - "-lz"
+    preBuildScripts:
+      - name: Build Rust static library
+        basedOnDependencyAnalysis: false
+        script: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          if [ "$PLATFORM_NAME" = "iphonesimulator" ]; then
+            RUST_TARGET="aarch64-apple-ios-sim"
+          else
+            RUST_TARGET="aarch64-apple-ios"
+          fi
+          cd "$SRCROOT/.."
+          cargo build --release --target "$RUST_TARGET" -p droplink-ios
+          mkdir -p "$SRCROOT/lib"
+          cp "target/$RUST_TARGET/release/libdroplink_ios.a" "$SRCROOT/lib/libdroplink_ios.a"
+          touch "$SRCROOT/lib/libdroplink_ios.a"
