@@ -1,148 +1,122 @@
 # DropLink
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
-![License](https://img.shields.io/badge/license-MIT-green)
+Transfert de fichiers P2P, chiffré de bout en bout. Un binaire Rust natif, sans compte, sans WebView, sans télémétrie.
 
-Transfert de fichiers P2P sur réseau local — AirDrop pour tout le monde. Sans compte, sans serveur, sans internet.
-
----
-
-## Utilisation
-
-![Screenshot placeholder](docs/screenshot-placeholder.png)
-
-1. Ouvrir DropLink sur deux machines connectées au même réseau Wi-Fi ou Ethernet
-2. Les appareils apparaissent automatiquement dans la liste
-3. Glisser un fichier sur l'appareil cible
-4. L'autre machine reçoit un popup Accept / Refuser
-5. Le fichier arrive dans `~/Downloads/DropLink/`
+![Rust](https://img.shields.io/badge/rust-1.92-orange)
+![Plateformes](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
+![Licence](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
-## Fonctionnement
+## Ce que fait DropLink
 
-```
-Appareil A                          Appareil B
-─────────                           ─────────
-mDNS advertise ─── LAN ──────────▶  mDNS browse
-                                     (apparaît dans la liste)
+1. Les appareils du même réseau se découvrent via mDNS en quelques secondes.
+2. Une fenêtre native liste les pairs disponibles (badge `LAN` ou `relay`).
+3. Glisser un fichier sur un appareil (ou utiliser « Choisir un fichier… »).
+4. Le destinataire voit une popup avec le nom, la taille et un code de sécurité à 6 chiffres.
+5. Le fichier est chiffré, transféré, vérifié (BLAKE3), puis publié dans `~/Downloads/DropLink/`.
 
-[glisser fichier sur B]
-
-TCP connect ──────────────────────▶  TCP server (port 7777–7800)
-Send Hello (DeviceInfo + metadata)
-                  ◀─────────────────  Popup Accept / Refuser
-                  
-[si accepté]
-Chunks 64KB ──────────────────────▶  Reçoit chunks
-                                     SHA-256 verify
-                                     Sauvegarde ~/Downloads/DropLink/
-Progress bar temps réel ◀──────────  Events Tauri → frontend
-```
-
-**Découverte** : mDNS / DNS-SD sur le LAN — aucun routeur ou serveur externe requis.  
-**Transfert** : TCP chunked (64 KB / chunk) + vérification SHA-256 en fin de transfert.  
-**Sauvegarde** : `~/Downloads/DropLink/<nom_fichier>` sur la machine réceptrice.
+Aucune donnée ne quitte les deux machines. Le relay optionnel ne transporte que du ciphertext.
 
 ---
 
-## Stack
+## Fonctionnalités
 
-| Couche | Technologie |
-|--------|------------|
-| Shell desktop | Tauri 2 |
-| Backend Rust | tokio, mdns-sd, sha2, serde_json, uuid, dirs-next, hostname |
-| Frontend | React 18 + TypeScript strict |
-| Style | Tailwind CSS v4 |
-| Découverte réseau | mDNS / DNS-SD |
-| Transfert | TCP chunked 64KB + SHA-256 |
-
----
-
-## Structure du projet
-
-```
-droplink/
-├── src-tauri/
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs          — entry point, AppState, 3 commandes Tauri
-│       ├── protocol.rs      — DeviceInfo, Message enum (Hello/Accept/Refuse/Error)
-│       ├── discovery.rs     — mDNS advertising + browsing, find_free_port, get_local_ip
-│       ├── transfer.rs      — TCP server/client, chunking 64KB, SHA-256, PendingMap
-│       └── tray.rs          — system tray (Afficher / Quitter)
-├── src/
-│   ├── types.ts             — interfaces TypeScript miroir des types Rust
-│   ├── App.tsx              — assemblage UI principal
-│   ├── components/
-│   │   ├── DeviceList.tsx   — liste appareils à proximité
-│   │   ├── DropZone.tsx     — zone drag & drop
-│   │   ├── TransferModal.tsx — progress bar transfert actif
-│   │   └── AcceptPopup.tsx  — popup accept/refuser transfert entrant
-│   └── hooks/
-│       ├── useDevices.ts    — sync appareils via events Tauri
-│       └── useTransfer.ts   — orchestration transferts, sendFile, respondTransfer
-├── docs/
-│   ├── ARCHITECTURE.md
-│   └── CHANGELOG.md
-└── tauri.conf.json          — fenêtre 320×500 non-resizable, identifier com.droplink.app
-```
+- **Découverte LAN** : mDNS/DNS-SD, sélection d'interface IPv4 privée, republication en cas de changement d'IP.
+- **Transfert P2P** : TCP direct, chunks de 256 Kio, BLAKE3 calculé pendant l'envoi (une seule lecture disque).
+- **Chiffrement bout-en-bout** : X25519 éphémère, HKDF-SHA256, ChaCha20-Poly1305, **une clé par direction**.
+- **Code SAS** : 6 chiffres identiques des deux côtés, affichés avant d'accepter — détection d'homme du milieu.
+- **Relay** : circuits WebSocket chiffrés pour les réseaux différents ; désactivé par défaut, activable dans les réglages ; le serveur ne peut rien déchiffrer.
+- **Multi-fichiers** : une ligne de progression par transfert, annulation, file sérialisée par appareil.
+- **Robustesse** : écriture `.part` + publication atomique, hash vérifié avant renommage, limites de connexions.
+- **100 % Rust** : UI egui/eframe, aucun Node, aucune WebView.
 
 ---
 
-## Commandes de développement
+## Installation
 
 ```bash
-# Frontend seulement (Vite dev server)
-npm run dev
+cargo build --release -p droplink-app
+./target/release/droplink
+```
 
-# App Tauri complète en mode développement
-npm run tauri dev
+Paquets natifs (optionnel) :
 
-# Vérification TypeScript
-npx tsc --noEmit
-
-# Tests Rust
-cd src-tauri && cargo test
-
-# Build release (génère l'installateur natif)
-npm run tauri build
+```bash
+cargo xtask bundle        # macOS .app/.dmg via cargo-bundle
+cargo xtask bundle-msi    # Windows .msi via cargo-wix
 ```
 
 ---
 
-## Prérequis
+## Développement
 
-- **Node.js** ≥ 18
-- **Rust** (stable, via [rustup](https://rustup.rs/))
-- **Tauri CLI v2** : `npm install -D @tauri-apps/cli`
-- Sur Linux : `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`
+```bash
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all -- --check
+cargo run -p droplink-app
+cargo run -p droplink-app -- --smoke   # démarrage sans fenêtre, mesure startup_ms
+cargo xtask perf                        # mesures de perf
+```
 
----
+Tests réseau réels :
 
-## Notes
-
-### Identifiant macOS
-
-L'identifiant actuel `com.droplink.app` se termine par `.app`, ce qui peut créer des conflits avec le bundle macOS lors de la signature ou d'une distribution App Store. Changer en `com.droplink.desktop` si une distribution signée est nécessaire.
-
-### Réseau
-
-La découverte mDNS fonctionne uniquement sur le réseau local. Les machines doivent être sur le même sous-réseau. Certains réseaux d'entreprise ou hotspots Wi-Fi bloquent le multicast mDNS.
-
----
-
-## Hors scope — Plan v0.2
-
-- Extension contextuelle OS (Finder macOS, Shell Windows, Nautilus Linux)
-- Mode invisible (désactiver mDNS advertising)
-- Historique des transferts
-- Chiffrement TLS du canal TCP
-- Support mobile (iOS / Android)
+```bash
+cargo test -p droplink-net --test direct_transfer
+cargo test -p droplink-net --test relay_transfer
+cargo test -p droplink-net --test mdns_loopback -- --ignored --nocapture
+```
 
 ---
 
-## License
+## Architecture
 
-MIT
+```
+crates/
+├── droplink-core/     protocole, frames, pairs, hash, chemins, registre, config, crypto
+├── droplink-net/      moteur de transfert, framing async, mDNS, transports direct/relay
+├── droplink-app/      UI native egui/eframe
+└── droplink-relay/    serveur axum de circuits opaques
+```
+
+Détails : [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · Sécurité : [`docs/SECURITY.md`](docs/SECURITY.md) ·
+Performances : [`docs/PERF.md`](docs/PERF.md) · Menaces : [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md).
+
+### Protocole en un coup d'œil
+
+```
+Hello (métadonnées + clé éphémère A)  ─────▶
+                                      ◀─────  KeyOffer (clé éphémère B)
+        [dérivation X25519 + HKDF + SAS des deux côtés]
+                                      ◀─────  Accept / Refuse  (scellé)
+Data scellés (ChaCha20-Poly1305)      ─────▶
+End { hash BLAKE3 } (scellé)          ─────▶
+                                      ◀─────  Done { ok }  (scellé)
+```
+
+---
+
+## Sécurité
+
+- Confidentialité et intégrité de bout en bout, y compris en passant par le relay.
+- Le relay ne voit ni nom de fichier, ni contenu, ni clé : uniquement des identifiants de circuit et du ciphertext.
+- Aucune télémétrie, aucun compte, aucun appel réseau hors mDNS et relay configuré.
+- L'utilisateur doit comparer le code SAS ; sans comparaison, un homme du milieu reste possible (comme partout).
+
+Voir [`docs/SECURITY.md`](docs/SECURITY.md).
+
+---
+
+## Limites connues
+
+- mDNS peut être bloqué par certains réseaux d'entreprise ; le relay prend le relais si activé.
+- La room du relay est dérivée de l'IP publique par défaut (un code de room permet de l'isoler).
+- Pas encore de reprise de transfert interrompu ni de chiffrement au repos.
+- Les icônes de bundle doivent être ajoutées dans `crates/droplink-app/icons/` avant une distribution signée.
+
+---
+
+## Licence
+
+MIT.

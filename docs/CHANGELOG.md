@@ -6,6 +6,38 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 
 ---
 
+## [1.0.0] — 2026-11-10
+
+### Ajouté
+- Workspace Cargo `droplink-core` / `droplink-net` / `droplink-app` / `droplink-relay`.
+- UI native egui/eframe : drag & drop OS natif, sélecteur de fichier, file de transferts, popup d'acceptation
+  avec code SAS, historique persistant, réglages.
+- Protocole v2 : frames length-prefixed versionnées, contrôle scellé, ACK final `Done`.
+- Chiffrement bout-en-bout X25519 + HKDF-SHA256 + ChaCha20-Poly1305, clé et compteur de nonce par direction.
+- Code SAS à 6 chiffres dérivé du transcript, affiché avant acceptation.
+- BLAKE3 en streaming (une seule lecture disque), publication `.part` + `hard_link` atomique.
+- Découverte mDNS robuste : sélection d'interface, identité `device_id`, gestion des homonymes et des pertes.
+- Relay de circuits réel : frames binaires opaques, rooms, limites dures, heartbeat, reconnexion avec backoff.
+- Transports unifiés direct → relay avec bascule automatique.
+- Tests : 130 tests (unitaires, intégration directe, relay, mDNS réel, anti-fuite, UI state, smoke).
+- CI 3 OS (fmt, clippy -D warnings, tests, build release) et workflow de release.
+
+### Corrigé
+- Drag & drop cassé (Tauri v2 ne fournit plus `File.path`).
+- Relay qui listait les pairs sans jamais transférer.
+- « Transfert terminé » affiché sans confirmation du récepteur.
+- Débit réseau couplé au renderer (un événement IPC par chunk).
+- Multi-fichiers écrasés dans une seule modale.
+- Identité incohérente entre registre (`ip:port`) et UI (nom).
+- Découverte morte sur un LAN sans internet (`get_local_ip` → `127.0.0.1`).
+- TOCTOU sur le port et sur les noms de fichiers.
+- Connexions entrantes non bornées.
+
+### Retiré
+- Stack Tauri/React/TypeScript, `node_modules`, WebView, dépendance `bluest` inutilisée.
+
+---
+
 ## [0.1.0] — 2026-05-21
 
 ### Ajouté

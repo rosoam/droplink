@@ -1,0 +1,37 @@
+[package]
+name = "droplink-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+droplink-core = { path = "../crates/droplink-core" }
+droplink-net = { path = "../crates/droplink-net" }
+
+[[bin]]
+name = "fuzz_frame"
+path = "fuzz_targets/fuzz_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_control"
+path = "fuzz_targets/fuzz_control.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_txt"
+path = "fuzz_targets/fuzz_txt.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

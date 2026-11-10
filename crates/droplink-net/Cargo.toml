@@ -1,0 +1,39 @@
+[package]
+name = "droplink-net"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "DropLink networking: transfer engine, discovery, transports"
+
+[dependencies]
+droplink-core = { path = "../droplink-core", version = "1.0.0" }
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
+mdns-sd.workspace = true
+if-addrs.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+bytes.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+droplink-relay = { path = "../droplink-relay", version = "1.0.0" }
+tokio-test.workspace = true
+criterion.workspace = true
+tempfile.workspace = true
+
+[[bench]]
+name = "loopback"
+harness = false
+
+[[bench]]
+name = "relay"
+harness = false

@@ -1,0 +1,39 @@
+[package]
+name = "droplink-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "DropLink native desktop app"
+
+[[bin]]
+name = "droplink"
+path = "src/main.rs"
+
+[dependencies]
+droplink-core = { path = "../droplink-core", version = "1.0.0" }
+droplink-net = { path = "../droplink-net", version = "1.0.0" }
+eframe.workspace = true
+egui.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+rfd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+directories.workspace = true
+hostname.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+proptest.workspace = true
+
+[package.metadata.bundle]
+name = "DropLink"
+identifier = "com.droplink.desktop"
+short_description = "Transfert de fichiers P2P chiffré"
+long_description = "DropLink transfère des fichiers entre appareils du même réseau, sans compte et sans serveur, avec chiffrement de bout en bout."
+category = "Utility"
+osx_minimum_system_version = "11.0"

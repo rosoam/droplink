@@ -1,0 +1,61 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.92"
+license = "MIT"
+authors = ["Romario Sobreira"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+blake3 = "1"
+zeroize = { version = "1", features = ["derive"] }
+indexmap = "2"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+hkdf = "0.12"
+sha2 = "0.10"
+chacha20poly1305 = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "net",
+  "io-util",
+  "fs",
+  "sync",
+  "time",
+  "macros",
+  "signal",
+] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures-util = "0.3"
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+axum = { version = "0.8", features = ["ws"] }
+mdns-sd = "0.21"
+if-addrs = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+bytes = "1"
+tempfile = "3"
+criterion = "0.5"
+proptest = "1"
+tokio-test = "0.4"
+eframe = "0.33"
+egui = "0.33"
+rfd = "0.18"
+directories = "6"
+anyhow = "1"
+hostname = "0.4"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+opt-level = 3
