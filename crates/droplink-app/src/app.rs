@@ -193,6 +193,13 @@ impl App {
             UiAction::SessionJoin { code } => self.handle.command(Command::SessionJoin { code }),
             UiAction::SessionRefresh => self.handle.command(Command::SessionRefresh),
             UiAction::SessionEnd => self.handle.command(Command::SessionEnd),
+            UiAction::ConnectDirect(peer) => {
+                tracing::info!(alias = %peer.alias, "manual peer added");
+                self.handle.command(Command::PeerSeen {
+                    peer,
+                    source: Source::Manual,
+                });
+            }
             UiAction::Open { path } => {
                 tracing::info!(path = %path.display(), "open requested");
                 if path.exists() {
@@ -395,7 +402,6 @@ impl eframe::App for App {
         let hovering = ctx.input(|input| !input.raw.hovered_files.is_empty());
 
         let mut actions: Vec<UiAction> = Vec::new();
-        let mut manual_peer: Option<droplink_core::peer::Peer> = None;
         let mut picker_requested = false;
         let (status, status_color) = self.status();
 
@@ -420,7 +426,7 @@ impl eframe::App for App {
                         egui::Vec2::new(width, 22.0),
                         egui::Layout::right_to_left(egui::Align::Center),
                         |ui| {
-                            if theme::action_button(ui, "cfg").clicked() {
+                            if theme::compact_button(ui, "cfg").clicked() {
                                 self.state.settings_open = true;
                             }
                             ui.label(
@@ -445,13 +451,25 @@ impl eframe::App for App {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.add_space(8.0);
-                        theme::section_header(
+                        let chip = match self.state.session.as_ref() {
+                            Some(session) => {
+                                let left = session
+                                    .expires_at
+                                    .saturating_sub(droplink_core::relay::now_secs());
+                                format!("code {:02}:{:02}", left / 60, left % 60)
+                            }
+                            None => "connexion".to_string(),
+                        };
+                        if theme::section_header_button(
                             ui,
                             "pairs",
                             Some(&format!("{}", self.state.devices.len())),
-                        );
+                            &chip,
+                        ) {
+                            self.state.connect_open = true;
+                        }
                         ui.add_space(6.0);
-                        manual_peer = ui::devices::show(ui, &mut self.state);
+                        ui::devices::show(ui, &mut self.state);
 
                         ui.add_space(10.0);
                         theme::section_header(ui, "envoyer", None);
@@ -503,14 +521,7 @@ impl eframe::App for App {
                     });
             });
 
-        if let Some(peer) = manual_peer {
-            tracing::info!(alias = %peer.alias, "manual peer added");
-            self.handle.command(Command::PeerSeen {
-                peer,
-                source: Source::Manual,
-            });
-        }
-
+        actions.extend(ui::connect::show(ctx, &mut self.state));
         actions.extend(ui::accept::show(ctx, &self.state));
 
         #[cfg(target_os = "ios")]

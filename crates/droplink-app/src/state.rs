@@ -41,6 +41,7 @@ pub enum UiAction {
     },
     SessionRefresh,
     SessionEnd,
+    ConnectDirect(Peer),
     Respond {
         transfer_id: TransferId,
         accept: bool,
@@ -101,6 +102,13 @@ impl Toast {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ConnectTab {
+    #[default]
+    Code,
+    Direct,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SessionView {
     pub code: String,
@@ -133,6 +141,8 @@ pub struct UiState {
     pub direct_port: String,
     pub session: Option<SessionView>,
     pub join_code: String,
+    pub connect_open: bool,
+    pub connect_tab: ConnectTab,
 }
 
 impl UiState {

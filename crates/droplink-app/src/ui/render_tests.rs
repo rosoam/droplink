@@ -1,7 +1,7 @@
 //! Headless egui rendering tests: they drive every screen with a populated state. No window is
 //! opened: `egui::Context::run` executes the layout and widget code for real.
 
-use crate::state::{HistoryEntry, SessionView, TransferRow, UiState};
+use crate::state::{ConnectTab, HistoryEntry, SessionView, TransferRow, UiState};
 use crate::ui;
 use droplink_core::config::{generate_device_id, Config};
 use droplink_core::peer::{Peer, PeerKey, Reach};
@@ -217,12 +217,19 @@ fn formats_bytes_across_units() {
 }
 
 #[test]
-fn renders_the_remote_session_panel() {
+fn renders_the_connect_dialog() {
     let ctx = egui::Context::default();
     crate::theme::apply(&ctx);
 
-    let mut owner = UiState::new(10);
-    owner.session = Some(SessionView {
+    let mut state = UiState::new(10);
+    state.connect_open = true;
+    state.connect_tab = ConnectTab::Code;
+    let output = ctx.run(RawInput::default(), |ctx| {
+        let _ = ui::connect::show(ctx, &mut state);
+    });
+    assert!(!output.shapes.is_empty());
+
+    state.session = Some(SessionView {
         code: "ABCD2345".into(),
         token: Some("tok".into()),
         expires_at: droplink_core::relay::now_secs() + 240,
@@ -231,33 +238,15 @@ fn renders_the_remote_session_panel() {
         error: None,
     });
     let output = ctx.run(RawInput::default(), |ctx| {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let _ = ui::session::show(ui, &mut owner);
-        });
+        let _ = ui::connect::show(ctx, &mut state);
     });
     assert!(!output.shapes.is_empty());
 
-    let mut guest = UiState::new(10);
-    guest.session = Some(SessionView {
-        code: "ABCD2345".into(),
-        token: Some("guest".into()),
-        expires_at: droplink_core::relay::now_secs() + 30,
-        ttl_secs: 300,
-        owner: false,
-        error: Some("relais injoignable".into()),
-    });
+    state.connect_tab = ConnectTab::Direct;
+    state.local_addr = Some("172.20.10.7:7777".into());
+    state.local_hotspot = true;
     let output = ctx.run(RawInput::default(), |ctx| {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let _ = ui::session::show(ui, &mut guest);
-        });
-    });
-    assert!(!output.shapes.is_empty());
-
-    let mut empty = UiState::new(10);
-    let output = ctx.run(RawInput::default(), |ctx| {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let _ = ui::session::show(ui, &mut empty);
-        });
+        let _ = ui::connect::show(ctx, &mut state);
     });
     assert!(!output.shapes.is_empty());
 }

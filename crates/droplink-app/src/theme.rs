@@ -118,6 +118,68 @@ pub fn section_header(ui: &mut egui::Ui, title: &str, meta: Option<&str>) {
     });
 }
 
+/// Compact bordered button for secondary chrome (dialogs, headers).
+pub fn compact_button(ui: &mut egui::Ui, label: &str) -> Response {
+    ui.add(
+        egui::Button::new(
+            RichText::new(format!("[ {label} ]"))
+                .monospace()
+                .size(9.5)
+                .color(MUTED),
+        )
+        .fill(Color32::TRANSPARENT)
+        .stroke(Stroke::new(1.0, BORDER))
+        .corner_radius(CornerRadius::same(3))
+        .min_size(Vec2::new(0.0, if is_mobile() { 26.0 } else { 20.0 })),
+    )
+}
+
+/// Compact accented button for the primary action of a dialog.
+pub fn compact_primary(ui: &mut egui::Ui, label: &str) -> Response {
+    ui.add(
+        egui::Button::new(
+            RichText::new(format!("[ {label} ]"))
+                .monospace()
+                .size(9.5)
+                .color(ACCENT),
+        )
+        .fill(Color32::TRANSPARENT)
+        .stroke(Stroke::new(1.0, ACCENT))
+        .corner_radius(CornerRadius::same(3))
+        .min_size(Vec2::new(0.0, if is_mobile() { 28.0 } else { 22.0 })),
+    )
+}
+
+/// Section header with a compact action button on the right. Returns true when clicked.
+pub fn section_header_button(
+    ui: &mut egui::Ui,
+    title: &str,
+    meta: Option<&str>,
+    action: &str,
+) -> bool {
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(format!("-- {}", title.to_lowercase()))
+                .monospace()
+                .size(10.5)
+                .color(MUTED),
+        );
+        let width = ui.available_width();
+        ui.allocate_ui_with_layout(
+            Vec2::new(width, 20.0),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                clicked = compact_button(ui, action).clicked();
+                if let Some(meta) = meta {
+                    ui.label(RichText::new(meta).monospace().size(10.5).color(MUTED));
+                }
+            },
+        );
+    });
+    clicked
+}
+
 pub fn key_value(ui: &mut egui::Ui, key: &str, value: &str) {
     ui.horizontal(|ui| {
         ui.label(
