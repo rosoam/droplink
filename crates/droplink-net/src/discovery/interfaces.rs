@@ -9,8 +9,26 @@ pub struct Iface {
 }
 
 const EXCLUDED_PREFIXES: &[&str] = &[
-    "utun", "tun", "tap", "docker", "vmnet", "vboxnet", "bridge", "awdl", "llw", "veth", "br-",
+    "utun", "tun", "tap", "docker", "vmnet", "vboxnet", "awdl", "llw", "veth", "br-",
+    // Cellular. Advertising the 3G/4G address in Bonjour makes peers dial an address that is
+    // not reachable from the local link (and can make the publish itself fail).
+    "pdp_ip", "cellular", "rmnet",
 ];
+
+/// Interface-name preference, added to the address score.
+///
+/// On iOS the Personal Hotspot AP is `bridge100` (172.20.10.1) while `en0` is the Wi-Fi client
+/// interface. Prefer a physical Wi-Fi address, then the hotspot bridge; cellular is excluded.
+fn name_score(name: &str) -> u8 {
+    let lower = name.to_ascii_lowercase();
+    if lower == "en0" {
+        3
+    } else if lower.starts_with("bridge") {
+        2
+    } else {
+        1
+    }
+}
 
 /// Pick the address to advertise over mDNS.
 ///
@@ -22,7 +40,7 @@ pub fn select_advertisable_ip(ifaces: &[Iface]) -> Option<Ipv4Addr> {
         .filter(|i| i.is_up)
         .filter(|i| !is_excluded_name(&i.name))
         .filter(|i| is_usable(&i.ip))
-        .max_by_key(|i| score(&i.ip))
+        .max_by_key(|i| (score(&i.ip), name_score(&i.name)))
         .map(|i| i.ip)
 }
 
@@ -105,6 +123,45 @@ mod tests {
             iface("llw0", [169, 254, 1, 2]),
         ];
         assert_eq!(select_advertisable_ip(&ifaces), None);
+    }
+
+    #[test]
+    fn cellular_only_returns_none() {
+        let ifaces = vec![iface("pdp_ip0", [10, 209, 199, 215])];
+        assert_eq!(select_advertisable_ip(&ifaces), None);
+    }
+
+    #[test]
+    fn hotspot_bridge_is_usable_and_beats_no_interface() {
+        let ifaces = vec![iface("bridge100", [172, 20, 10, 1])];
+        assert_eq!(
+            select_advertisable_ip(&ifaces),
+            Some(Ipv4Addr::new(172, 20, 10, 1))
+        );
+    }
+
+    #[test]
+    fn en0_beats_a_bridge_on_equal_addresses() {
+        let ifaces = vec![
+            iface("bridge100", [192, 168, 1, 2]),
+            iface("en0", [192, 168, 1, 2]),
+        ];
+        assert_eq!(
+            select_advertisable_ip(&ifaces),
+            Some(Ipv4Addr::new(192, 168, 1, 2))
+        );
+    }
+
+    #[test]
+    fn hotspot_wins_over_cellular() {
+        let ifaces = vec![
+            iface("pdp_ip0", [10, 209, 199, 215]),
+            iface("en0", [172, 20, 10, 1]),
+        ];
+        assert_eq!(
+            select_advertisable_ip(&ifaces),
+            Some(Ipv4Addr::new(172, 20, 10, 1))
+        );
     }
 
     #[test]

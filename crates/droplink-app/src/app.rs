@@ -54,6 +54,8 @@ impl App {
 
         let discovery = {
             let (dtx, mut drx) = mpsc::channel(64);
+            let interfaces = droplink_net::discovery::system_interfaces();
+            tracing::info!(?interfaces, "network interfaces");
             let spec = advert_for(&config.device_id, &config.device_name, bound.port);
             if let Some(spec) = &spec {
                 state.local_addr = Some(format!("{}:{}", spec.ip, bound.port));
