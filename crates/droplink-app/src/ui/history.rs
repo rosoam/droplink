@@ -13,20 +13,17 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
 
     for (index, entry) in state.history.iter().enumerate() {
         let path = entry.path.clone();
-        let mut open_requested = false;
+        let clickable = path.is_some();
         let response = theme::row(ui, egui::Id::new(("history", index)), false, |ui| {
             ui.label(theme::mono("+", 12.0).color(theme::ACCENT));
             ui.add_space(4.0);
-            let name_width = (ui.available_width() - 132.0).max(40.0);
+            let name_width = (ui.available_width() - 100.0).max(40.0);
             theme::truncated(ui, &entry.file_name, 12.0, theme::TEXT, name_width);
             let width = ui.available_width();
             ui.allocate_ui_with_layout(
                 egui::Vec2::new(width, 16.0),
                 egui::Layout::right_to_left(egui::Align::Center),
                 |ui| {
-                    if path.is_some() && theme::action_button(ui, "ouvrir").clicked() {
-                        open_requested = true;
-                    }
                     ui.label(
                         theme::mono(
                             format!(
@@ -40,11 +37,14 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
                     );
                 },
             );
+        })
+        .on_hover_cursor(if clickable {
+            egui::CursorIcon::PointingHand
+        } else {
+            egui::CursorIcon::Default
         });
+        // The whole row is the affordance: no trailing button.
         if response.clicked() {
-            open_requested = true;
-        }
-        if open_requested {
             if let Some(path) = path {
                 actions.push(UiAction::Open { path: path.into() });
             }

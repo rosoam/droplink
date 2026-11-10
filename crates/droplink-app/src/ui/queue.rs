@@ -34,10 +34,7 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
                 egui::Vec2::new(width, 16.0),
                 egui::Layout::right_to_left(egui::Align::Center),
                 |ui| {
-                    if theme::muted_button(ui, "x")
-                        .on_hover_text("annuler")
-                        .clicked()
-                    {
+                    if theme::icon_button(ui, "×", "annuler").clicked() {
                         actions.push(UiAction::Cancel {
                             transfer_id: row.transfer_id.clone(),
                         });

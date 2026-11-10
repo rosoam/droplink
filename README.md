@@ -83,7 +83,7 @@ Sur iPhone :
 
 - les **images et vidéos** reçues sont enregistrées dans **Photos** ;
 - le reste est copié dans le **dossier choisi** dans Fichiers (`cfg → Destination → [ choisir ]`) ;
-- la copie de travail reste dans `Fichiers → Sur mon iPhone → DropLink`, et `[ ouvrir ]` la présente.
+- la copie de travail reste dans `Fichiers → Sur mon iPhone → DropLink`, et un clic sur la ligne de l'historique la présente.
 
 ---
 
@@ -240,7 +240,7 @@ Déploiement : voir `deploy/README.md` (systemd + Caddy WSS). Détails : `docs/R
 | Transfert refusé | popup non acceptée ou délai de 60 s dépassé | accepter dans la fenêtre, comparer le SAS |
 | `Operation not permitted` sur iOS | ancien chemin de sandbox persisté | corrigé : le dossier est recalculé à chaque démarrage |
 | Fichier introuvable dans l'historique | fichier déplacé/supprimé depuis | l'historique ne garde que les fichiers présents |
-| Le bouton `[ ouvrir ]` ne fait rien | fichier absent du sandbox | un toast `! fichier introuvable` s'affiche |
+| Un clic sur une ligne ne l'ouvre pas | fichier absent du sandbox | un toast `! fichier introuvable` s'affiche |
 
 ---
 

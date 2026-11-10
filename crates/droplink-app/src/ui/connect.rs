@@ -20,36 +20,24 @@ fn countdown(session: &SessionView) -> (String, u64) {
 
 pub fn show(ctx: &egui::Context, state: &mut UiState) -> Vec<UiAction> {
     let mut actions = Vec::new();
-    if !state.connect_open {
-        return actions;
-    }
-
-    let mut open = true;
-    egui::Window::new("connexion")
-        .open(&mut open)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .show(ctx, |ui| {
-            ui.set_width(if theme::is_mobile() { 300.0 } else { 330.0 });
-            ui.horizontal(|ui| {
-                if tab(ui, "code", state.connect_tab == ConnectTab::Code).clicked() {
-                    state.connect_tab = ConnectTab::Code;
-                }
-                if tab(ui, "adresse", state.connect_tab == ConnectTab::Direct).clicked() {
-                    state.connect_tab = ConnectTab::Direct;
-                }
-            });
-            ui.add_space(6.0);
-            match state.connect_tab {
-                ConnectTab::Code => code_tab(ui, state, &mut actions),
-                ConnectTab::Direct => direct_tab(ui, state, &mut actions),
+    let mut open = state.connect_open;
+    let width = if theme::is_mobile() { 300.0 } else { 340.0 };
+    let _ = theme::dialog(ctx, "connexion", width, &mut open, |ui| {
+        ui.horizontal(|ui| {
+            if tab(ui, "code", state.connect_tab == ConnectTab::Code).clicked() {
+                state.connect_tab = ConnectTab::Code;
+            }
+            if tab(ui, "adresse", state.connect_tab == ConnectTab::Direct).clicked() {
+                state.connect_tab = ConnectTab::Direct;
             }
         });
-
-    if !open {
-        state.connect_open = false;
-    }
+        ui.add_space(8.0);
+        match state.connect_tab {
+            ConnectTab::Code => code_tab(ui, state, &mut actions),
+            ConnectTab::Direct => direct_tab(ui, state, &mut actions),
+        }
+    });
+    state.connect_open = open;
     actions
 }
 
@@ -74,7 +62,7 @@ fn code_tab(ui: &mut egui::Ui, state: &mut UiState, actions: &mut Vec<UiAction>)
                         .hint_text("code")
                         .font(egui::TextStyle::Monospace)
                         .desired_width(if theme::is_mobile() { 96.0 } else { 110.0 })
-                        .margin(egui::Margin::symmetric(5, 3)),
+                        .margin(egui::Margin::symmetric(6, 6)),
                 );
                 if theme::compact_button(ui, "rejoindre").clicked() {
                     match normalize_code(&state.join_code) {
@@ -125,7 +113,7 @@ fn code_tab(ui: &mut egui::Ui, state: &mut UiState, actions: &mut Vec<UiAction>)
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 if session.owner {
-                    if theme::compact_button(ui, "nouveau code").clicked() {
+                    if theme::icon_button(ui, "↻", "nouveau code").clicked() {
                         actions.push(UiAction::SessionRefresh);
                     }
                     if theme::compact_button(ui, "terminer").clicked() {
@@ -201,14 +189,14 @@ fn direct_tab(ui: &mut egui::Ui, state: &mut UiState, actions: &mut Vec<UiAction
                 .hint_text("ip")
                 .font(egui::TextStyle::Monospace)
                 .desired_width(if theme::is_mobile() { 110.0 } else { 140.0 })
-                .margin(egui::Margin::symmetric(5, 3)),
+                .margin(egui::Margin::symmetric(6, 6)),
         );
         ui.add(
             egui::TextEdit::singleline(&mut state.direct_port)
                 .hint_text("port")
                 .font(egui::TextStyle::Monospace)
                 .desired_width(58.0)
-                .margin(egui::Margin::symmetric(5, 3)),
+                .margin(egui::Margin::symmetric(6, 6)),
         );
         if theme::compact_primary(ui, "connecter").clicked() {
             match parse_target(&state.direct_host, &state.direct_port) {

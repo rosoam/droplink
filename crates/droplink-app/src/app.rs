@@ -426,7 +426,7 @@ impl eframe::App for App {
                         egui::Vec2::new(width, 22.0),
                         egui::Layout::right_to_left(egui::Align::Center),
                         |ui| {
-                            if theme::compact_button(ui, "cfg").clicked() {
+                            if theme::icon_button(ui, "⚙", "réglages").clicked() {
                                 self.state.settings_open = true;
                             }
                             ui.label(

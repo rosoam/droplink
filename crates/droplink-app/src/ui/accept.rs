@@ -14,44 +14,47 @@ pub fn show(ctx: &egui::Context, state: &UiState) -> Vec<UiAction> {
             continue;
         };
         let sender = crate::ui::display_name(&incoming.sender_alias);
-        let response = egui::Modal::new(egui::Id::new(("accept", id.clone()))).show(ctx, |ui| {
-            ui.set_width(300.0);
-            ui.label(theme::mono("-- entrant", 10.5).color(theme::MUTED));
-            ui.add_space(2.0);
-            theme::key_value(ui, "de", &sender);
-            theme::key_value(
-                ui,
-                "file",
-                &format!(
-                    "{} ({})",
-                    incoming.file_name,
-                    format_bytes(incoming.file_size)
-                ),
-            );
-            theme::key_value(ui, "via", mode_label(incoming.transport));
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label(theme::mono("sas   ", 11.0).color(theme::MUTED));
-                ui.label(
-                    RichText::new(sas_spaced(&incoming.sas))
-                        .monospace()
-                        .size(20.0)
-                        .color(theme::ACCENT),
+        let response = egui::Modal::new(egui::Id::new(("accept", id.clone())))
+            .frame(theme::dialog_frame())
+            .backdrop_color(egui::Color32::from_black_alpha(160))
+            .show(ctx, |ui| {
+                ui.set_width(300.0);
+                ui.label(theme::mono("-- entrant", 10.5).color(theme::MUTED));
+                ui.add_space(2.0);
+                theme::key_value(ui, "de", &sender);
+                theme::key_value(
+                    ui,
+                    "file",
+                    &format!(
+                        "{} ({})",
+                        incoming.file_name,
+                        format_bytes(incoming.file_size)
+                    ),
                 );
+                theme::key_value(ui, "via", mode_label(incoming.transport));
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(theme::mono("sas   ", 11.0).color(theme::MUTED));
+                    ui.label(
+                        RichText::new(sas_spaced(&incoming.sas))
+                            .monospace()
+                            .size(20.0)
+                            .color(theme::ACCENT),
+                    );
+                });
+                ui.label(theme::mono("compare ce code avec l'expéditeur", 9.5).color(theme::MUTED));
+                ui.add_space(10.0);
+                let mut decision = None;
+                ui.horizontal(|ui| {
+                    if theme::muted_button(ui, "refuser").clicked() {
+                        decision = Some(false);
+                    }
+                    if theme::action_button(ui, "accepter").clicked() {
+                        decision = Some(true);
+                    }
+                });
+                decision
             });
-            ui.label(theme::mono("compare ce code avec l'expéditeur", 9.5).color(theme::MUTED));
-            ui.add_space(10.0);
-            let mut decision = None;
-            ui.horizontal(|ui| {
-                if theme::muted_button(ui, "refuser").clicked() {
-                    decision = Some(false);
-                }
-                if theme::action_button(ui, "accepter").clicked() {
-                    decision = Some(true);
-                }
-            });
-            decision
-        });
 
         if let Some(accept) = response.inner {
             actions.push(UiAction::Respond {

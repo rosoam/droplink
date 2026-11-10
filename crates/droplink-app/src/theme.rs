@@ -61,8 +61,10 @@ pub fn apply(ctx: &egui::Context) {
 
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = Vec2::new(6.0, 6.0);
-    style.spacing.button_padding = Vec2::new(6.0, 3.0);
-    style.spacing.interact_size.y = if is_mobile() { 34.0 } else { 24.0 };
+    style.spacing.button_padding = Vec2::new(8.0, 3.0);
+    // Buttons are explicitly sized below; this floor must stay under the input height so a
+    // button never dwarfs the field next to it.
+    style.spacing.interact_size.y = 18.0;
     style.text_styles = [
         (TextStyle::Heading, FontId::monospace(15.0)),
         (TextStyle::Body, FontId::monospace(12.5)),
@@ -118,36 +120,85 @@ pub fn section_header(ui: &mut egui::Ui, title: &str, meta: Option<&str>) {
     });
 }
 
+/// Frame shared by every dialog: flat panel, thin border, soft shadow, generous padding.
+pub fn dialog_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(BG)
+        .stroke(Stroke::new(1.0, BORDER))
+        .corner_radius(CornerRadius::same(6))
+        .inner_margin(egui::Margin::same(12))
+        .shadow(egui::epaint::Shadow {
+            offset: [0, 8],
+            blur: 24,
+            spread: 0,
+            color: Color32::from_black_alpha(150),
+        })
+}
+
+/// Centered dialog with a custom header (`-- titre` + `[ esc ]`) and a hairline separator.
+///
+/// Returns `None` when the dialog is closed (button, Escape or outside), `Some(inner)` otherwise.
+pub fn dialog<T>(
+    ctx: &egui::Context,
+    title: &str,
+    width: f32,
+    open: &mut bool,
+    add: impl FnOnce(&mut egui::Ui) -> T,
+) -> Option<T> {
+    if !*open {
+        return None;
+    }
+    let mut keep_open = true;
+    let response = egui::Window::new(title)
+        .id(egui::Id::new(("dialog", title)))
+        .title_bar(false)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .frame(dialog_frame())
+        .show(ctx, |ui| {
+            ui.set_width(width);
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("-- {}", title.to_lowercase()))
+                        .monospace()
+                        .size(10.5)
+                        .color(MUTED),
+                );
+                let available = ui.available_width();
+                ui.allocate_ui_with_layout(
+                    Vec2::new(available, button_height() + 2.0),
+                    egui::Layout::right_to_left(egui::Align::Center),
+                    |ui| {
+                        if icon_button(ui, "×", "fermer (esc)").clicked() {
+                            keep_open = false;
+                        }
+                    },
+                );
+            });
+            let rect = ui.available_rect_before_wrap();
+            ui.painter()
+                .hline(rect.x_range(), rect.top() + 1.0, Stroke::new(1.0, BORDER));
+            ui.add_space(10.0);
+            add(ui)
+        });
+
+    let escaped = ctx.input(|input| input.key_pressed(egui::Key::Escape));
+    if !keep_open || escaped || response.is_none() {
+        *open = false;
+        return None;
+    }
+    response.and_then(|response| response.inner)
+}
+
 /// Compact bordered button for secondary chrome (dialogs, headers).
 pub fn compact_button(ui: &mut egui::Ui, label: &str) -> Response {
-    ui.add(
-        egui::Button::new(
-            RichText::new(format!("[ {label} ]"))
-                .monospace()
-                .size(9.5)
-                .color(MUTED),
-        )
-        .fill(Color32::TRANSPARENT)
-        .stroke(Stroke::new(1.0, BORDER))
-        .corner_radius(CornerRadius::same(3))
-        .min_size(Vec2::new(0.0, if is_mobile() { 26.0 } else { 20.0 })),
-    )
+    button(ui, label, MUTED, false)
 }
 
 /// Compact accented button for the primary action of a dialog.
 pub fn compact_primary(ui: &mut egui::Ui, label: &str) -> Response {
-    ui.add(
-        egui::Button::new(
-            RichText::new(format!("[ {label} ]"))
-                .monospace()
-                .size(9.5)
-                .color(ACCENT),
-        )
-        .fill(Color32::TRANSPARENT)
-        .stroke(Stroke::new(1.0, ACCENT))
-        .corner_radius(CornerRadius::same(3))
-        .min_size(Vec2::new(0.0, if is_mobile() { 28.0 } else { 22.0 })),
-    )
+    button(ui, label, ACCENT, true)
 }
 
 /// Section header with a compact action button on the right. Returns true when clicked.
@@ -167,7 +218,7 @@ pub fn section_header_button(
         );
         let width = ui.available_width();
         ui.allocate_ui_with_layout(
-            Vec2::new(width, 20.0),
+            Vec2::new(width, button_height() + 2.0),
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| {
                 clicked = compact_button(ui, action).clicked();
@@ -198,32 +249,40 @@ pub fn progress_bar(fraction: f32, width: usize) -> String {
     format!("[{}{}]", "█".repeat(filled), "·".repeat(width - filled))
 }
 
-pub fn action_button(ui: &mut egui::Ui, label: &str) -> Response {
+fn button_height() -> f32 {
+    if is_mobile() {
+        24.0
+    } else {
+        20.0
+    }
+}
+
+fn button(ui: &mut egui::Ui, label: &str, color: Color32, primary: bool) -> Response {
     ui.add(
-        egui::Button::new(
-            RichText::new(format!("[ {label} ]"))
-                .monospace()
-                .color(ACCENT),
-        )
-        .fill(Color32::TRANSPARENT)
-        .stroke(Stroke::NONE)
-        .corner_radius(CornerRadius::ZERO)
-        .min_size(Vec2::new(0.0, if is_mobile() { 34.0 } else { 24.0 })),
+        egui::Button::new(RichText::new(label).monospace().size(10.5).color(color))
+            .stroke(Stroke::new(1.0, if primary { color } else { BORDER }))
+            .corner_radius(CornerRadius::same(3))
+            .min_size(Vec2::new(0.0, button_height())),
     )
 }
 
+pub fn action_button(ui: &mut egui::Ui, label: &str) -> Response {
+    button(ui, label, ACCENT, true)
+}
+
 pub fn muted_button(ui: &mut egui::Ui, label: &str) -> Response {
+    button(ui, label, MUTED, false)
+}
+
+/// Square icon button (close, cancel, refresh). The second argument is the hover tooltip.
+pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tooltip: &str) -> Response {
     ui.add(
-        egui::Button::new(
-            RichText::new(format!("[ {label} ]"))
-                .monospace()
-                .color(MUTED),
-        )
-        .fill(Color32::TRANSPARENT)
-        .stroke(Stroke::NONE)
-        .corner_radius(CornerRadius::ZERO)
-        .min_size(Vec2::new(0.0, if is_mobile() { 34.0 } else { 24.0 })),
+        egui::Button::new(RichText::new(glyph).monospace().size(11.5).color(MUTED))
+            .stroke(Stroke::new(1.0, BORDER))
+            .corner_radius(CornerRadius::same(3))
+            .min_size(Vec2::splat(button_height())),
     )
+    .on_hover_text(tooltip)
 }
 
 pub fn row(
@@ -235,6 +294,10 @@ pub fn row(
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, row_height()), egui::Sense::hover());
     let response = ui.interact(rect, id, egui::Sense::click());
+    if !selected && response.hovered() {
+        ui.painter()
+            .rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(255, 255, 255, 6));
+    }
     if selected {
         ui.painter().rect_filled(rect, 0.0, ACCENT_DIM);
         ui.painter().rect_filled(

@@ -67,7 +67,7 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
         egui::TextEdit::singleline(value)
             .font(egui::TextStyle::Monospace)
             .desired_width(f32::INFINITY)
-            .margin(egui::Margin::symmetric(6, 4)),
+            .margin(egui::Margin::symmetric(6, 6)),
     );
     ui.add_space(6.0);
 }
@@ -80,80 +80,65 @@ pub fn show(
     error: &mut Option<String>,
     ios_destination: Option<&str>,
 ) -> Option<Outcome> {
-    if !*open {
-        return None;
-    }
     let mut outcome = None;
-    let mut window_open = *open;
+    let _ = theme::dialog(ctx, "réglages", 320.0, open, |ui| {
+        ui.label(theme::mono("-- appareil", 10.0).color(theme::MUTED));
+        ui.add_space(4.0);
+        field(ui, "Nom de l'appareil", &mut draft.device_name);
 
-    egui::Window::new("Réglages")
-        .open(&mut window_open)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .show(ctx, |ui| {
-            ui.set_width(320.0);
-            ui.label(theme::mono("-- appareil", 10.0).color(theme::MUTED));
-            ui.add_space(4.0);
-            field(ui, "Nom de l'appareil", &mut draft.device_name);
-
-            if theme::is_mobile() {
-                ui.label(theme::mono("Destination", 9.5).color(theme::MUTED));
-                ui.label(
-                    theme::mono(ios_destination.unwrap_or("DropLink (Fichiers)"), 11.5)
-                        .color(theme::TEXT),
-                );
-                ui.horizontal(|ui| {
-                    if theme::action_button(ui, "choisir").clicked() {
-                        outcome = Some(Outcome::PickFolder);
-                    }
-                    if theme::muted_button(ui, "fichiers").clicked() {
-                        outcome = Some(Outcome::OpenFiles);
-                    }
-                });
-                ui.label(
-                    theme::mono("images/vidéos -> Photos, le reste -> ce dossier", 9.5)
-                        .color(theme::MUTED),
-                );
-                ui.add_space(6.0);
-            } else {
-                field(ui, "Dossier de réception", &mut draft.receive_dir);
-                field(ui, "Port fixe (vide = auto)", &mut draft.port_pref);
-            }
-
-            ui.add_space(4.0);
-            ui.label(theme::mono("-- réseau", 10.0).color(theme::MUTED));
-            ui.add_space(4.0);
-            field(ui, "URL du relay", &mut draft.relay_url);
+        if theme::is_mobile() {
+            ui.label(theme::mono("Destination", 9.5).color(theme::MUTED));
             ui.label(
-                theme::mono(
-                    "utilisé seulement quand tu crées ou rejoins une session",
-                    9.0,
-                )
-                .color(theme::MUTED),
+                theme::mono(ios_destination.unwrap_or("DropLink (Fichiers)"), 11.5)
+                    .color(theme::TEXT),
             );
-
-            if let Some(message) = error.as_deref() {
-                ui.add_space(2.0);
-                ui.colored_label(theme::WARN, RichText::new(message).size(11.0));
-            }
-
-            ui.add_space(10.0);
             ui.horizontal(|ui| {
-                if theme::action_button(ui, "enregistrer").clicked() {
-                    match draft.to_config(base) {
-                        Ok(config) => outcome = Some(Outcome::Save(config)),
-                        Err(err) => *error = Some(err.to_string()),
-                    }
+                if theme::compact_button(ui, "choisir").clicked() {
+                    outcome = Some(Outcome::PickFolder);
                 }
-                if theme::muted_button(ui, "fermer").clicked() {
-                    outcome = Some(Outcome::Close);
+                if theme::compact_button(ui, "fichiers").clicked() {
+                    outcome = Some(Outcome::OpenFiles);
                 }
             });
-        });
+            ui.label(
+                theme::mono("images/vidéos -> Photos, le reste -> ce dossier", 9.5)
+                    .color(theme::MUTED),
+            );
+            ui.add_space(6.0);
+        } else {
+            field(ui, "Dossier de réception", &mut draft.receive_dir);
+            field(ui, "Port fixe (vide = auto)", &mut draft.port_pref);
+        }
 
-    *open = window_open;
-    if outcome.is_none() && !window_open {
+        ui.add_space(4.0);
+        ui.label(theme::mono("-- réseau", 10.0).color(theme::MUTED));
+        ui.add_space(4.0);
+        field(ui, "URL du relay", &mut draft.relay_url);
+        ui.label(
+            theme::mono(
+                "utilisé seulement quand tu crées ou rejoins une session",
+                9.0,
+            )
+            .color(theme::MUTED),
+        );
+
+        if let Some(message) = error.as_deref() {
+            ui.add_space(2.0);
+            ui.colored_label(theme::WARN, RichText::new(message).size(11.0));
+        }
+
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            if theme::compact_primary(ui, "enregistrer").clicked() {
+                match draft.to_config(base) {
+                    Ok(config) => outcome = Some(Outcome::Save(config)),
+                    Err(err) => *error = Some(err.to_string()),
+                }
+            }
+        });
+    });
+
+    if !*open && outcome.is_none() {
         outcome = Some(Outcome::Close);
     }
     outcome
