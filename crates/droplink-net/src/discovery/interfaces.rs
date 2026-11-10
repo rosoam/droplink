@@ -54,6 +54,17 @@ fn is_private(ip: &Ipv4Addr) -> bool {
         || (octets[0] == 192 && octets[1] == 168)
 }
 
+/// Vrai pour l'adresse d'un client du partage de connexion iPhone (`172.20.10.0/28`).
+///
+/// Dans ce réseau, le multicast mDNS est filtré de façon intermittente entre l'iPhone
+/// et ses clients : la découverte automatique peut échouer alors que les deux
+/// appareils restent joignables en TCP. L'interface le signale pour proposer la
+/// connexion par adresse.
+pub fn is_personal_hotspot(ip: &Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 172 && octets[1] == 20 && octets[2] == 10 && octets[3] < 16
+}
+
 /// Enumerate the host interfaces through `if-addrs`.
 pub fn system_interfaces() -> Vec<Iface> {
     match if_addrs::get_if_addrs() {
@@ -128,6 +139,14 @@ mod tests {
         let mut down = iface("en0", [192, 168, 1, 20]);
         down.is_up = false;
         assert_eq!(select_advertisable_ip(&[down]), None);
+    }
+
+    #[test]
+    fn detects_iphone_personal_hotspot() {
+        assert!(is_personal_hotspot(&Ipv4Addr::new(172, 20, 10, 1)));
+        assert!(is_personal_hotspot(&Ipv4Addr::new(172, 20, 10, 7)));
+        assert!(!is_personal_hotspot(&Ipv4Addr::new(172, 20, 11, 7)));
+        assert!(!is_personal_hotspot(&Ipv4Addr::new(192, 168, 1, 7)));
     }
 
     #[test]

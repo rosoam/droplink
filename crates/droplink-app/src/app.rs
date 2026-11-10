@@ -57,7 +57,16 @@ impl App {
         let discovery = {
             let (dtx, mut drx) = mpsc::channel(64);
             let spec = advert_for(&config.device_id, &config.device_name, bound.port);
-            if spec.is_none() {
+            if let Some(spec) = &spec {
+                state.local_addr = Some(format!("{}:{}", spec.ip, bound.port));
+                state.local_hotspot = droplink_net::discovery::is_personal_hotspot(&spec.ip);
+                if state.local_hotspot {
+                    tracing::info!(
+                        addr = %state.local_addr.clone().unwrap_or_default(),
+                        "personal hotspot: mDNS may be filtered, direct address available"
+                    );
+                }
+            } else {
                 state.discovery_available = false;
                 tracing::warn!("no advertisable IPv4, mDNS disabled");
             }
@@ -382,6 +391,7 @@ impl eframe::App for App {
         let hovering = ctx.input(|input| !input.raw.hovered_files.is_empty());
 
         let mut actions: Vec<UiAction> = Vec::new();
+        let mut manual_peer: Option<droplink_core::peer::Peer> = None;
         let mut picker_requested = false;
         let (status, status_color) = self.status();
 
@@ -437,7 +447,7 @@ impl eframe::App for App {
                             Some(&format!("{}", self.state.devices.len())),
                         );
                         ui.add_space(6.0);
-                        ui::devices::show(ui, &mut self.state);
+                        manual_peer = ui::devices::show(ui, &mut self.state);
 
                         ui.add_space(10.0);
                         theme::section_header(ui, "envoyer", None);
@@ -488,6 +498,14 @@ impl eframe::App for App {
                         ui.add_space(18.0);
                     });
             });
+
+        if let Some(peer) = manual_peer {
+            tracing::info!(alias = %peer.alias, "manual peer added");
+            self.handle.command(Command::PeerSeen {
+                peer,
+                source: Source::Manual,
+            });
+        }
 
         actions.extend(ui::accept::show(ctx, &self.state));
 

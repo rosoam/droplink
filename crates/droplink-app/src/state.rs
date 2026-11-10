@@ -108,6 +108,13 @@ pub struct UiState {
     pub toast: Option<Toast>,
     pub outcome: Option<Outcome>,
     pub history_limit: usize,
+    /// Adresse `ip:port` de cette machine, affichée pour la connexion manuelle.
+    pub local_addr: Option<String>,
+    /// Vrai quand cette machine est cliente d'un partage de connexion iPhone.
+    pub local_hotspot: bool,
+    /// Saisie de la connexion directe (`hôte` et `port`).
+    pub direct_host: String,
+    pub direct_port: String,
 }
 
 impl UiState {
@@ -317,7 +324,9 @@ impl UiState {
 
 pub fn peer_matches(peer: &Peer, key: &PeerKey) -> bool {
     match key {
-        PeerKey::Direct(id) => peer.device_id.as_deref() == Some(id.as_str()),
+        PeerKey::Direct(id) => {
+            peer.device_id.as_deref() == Some(id.as_str()) || &peer.direct_key() == id
+        }
         PeerKey::Relay(peer_id) => {
             peer.reach.relay_id().map(String::as_str) == Some(peer_id.as_str())
         }
@@ -328,7 +337,7 @@ pub fn peer_key(peer: &Peer) -> PeerKey {
     if let Some(peer_id) = peer.reach.relay_id() {
         return PeerKey::Relay(peer_id.clone());
     }
-    PeerKey::Direct(peer.device_id.clone().unwrap_or_else(|| peer.alias.clone()))
+    PeerKey::Direct(peer.direct_key())
 }
 
 #[cfg(test)]

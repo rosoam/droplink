@@ -8,6 +8,9 @@ use crate::protocol::{DeviceId, PeerId, MAX_ALIAS_LEN};
 pub enum Source {
     Mdns,
     Relay,
+    /// Adresse saisie à la main (`ip:port`). Utilisée quand le multicast ne passe pas :
+    /// partage de connexion iPhone, Wi-Fi invité, réseau qui filtre mDNS.
+    Manual,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,10 +90,19 @@ impl Peer {
 
     pub fn key(&self, source: Source) -> PeerKey {
         match source {
-            Source::Mdns => {
-                PeerKey::Direct(self.device_id.clone().unwrap_or_else(|| self.alias.clone()))
-            }
+            Source::Mdns | Source::Manual => PeerKey::Direct(self.direct_key()),
             Source::Relay => PeerKey::Relay(self.reach.relay_id().cloned().unwrap_or_default()),
+        }
+    }
+
+    /// Clé d'un pair direct : l'identité prouvée si elle existe, sinon l'adresse saisie.
+    pub fn direct_key(&self) -> String {
+        if let Some(id) = &self.device_id {
+            return id.clone();
+        }
+        match &self.reach {
+            Reach::Direct { ip, port } | Reach::Both { ip, port, .. } => format!("{ip}:{port}"),
+            Reach::Relay { .. } => self.alias.clone(),
         }
     }
 }
@@ -171,6 +183,38 @@ mod tests {
         let mut p = direct(7777);
         p.alias = "x".repeat(65);
         assert!(matches!(p.validate(), Err(crate::Error::InvalidPeer(_))));
+    }
+
+    #[test]
+    fn manual_peer_is_keyed_by_its_address() {
+        let p = Peer {
+            device_id: None,
+            alias: "direct".into(),
+            reach: Reach::Direct {
+                ip: IpAddr::V4(Ipv4Addr::new(172, 20, 10, 1)),
+                port: 7777,
+            },
+        };
+        assert_eq!(
+            p.key(Source::Manual),
+            PeerKey::Direct("172.20.10.1:7777".into())
+        );
+        assert_eq!(p.direct_key(), "172.20.10.1:7777");
+    }
+
+    #[test]
+    fn manual_peer_prefers_the_proven_identity() {
+        let mut p = Peer {
+            device_id: Some("11111111-1111-4111-8111-111111111111".into()),
+            alias: "iPhone".into(),
+            reach: Reach::Direct {
+                ip: IpAddr::V4(Ipv4Addr::new(172, 20, 10, 1)),
+                port: 7777,
+            },
+        };
+        assert_eq!(p.direct_key(), "11111111-1111-4111-8111-111111111111");
+        p.device_id = None;
+        assert_eq!(p.direct_key(), "172.20.10.1:7777");
     }
 
     #[test]

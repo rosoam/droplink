@@ -156,6 +156,7 @@ impl DeviceRegistry {
     fn key_for(peer: &Peer, source: Source) -> Option<PeerKey> {
         match source {
             Source::Mdns => peer.device_id.clone().map(PeerKey::Direct),
+            Source::Manual => Some(PeerKey::Direct(peer.direct_key())),
             Source::Relay => peer.reach.relay_id().cloned().map(PeerKey::Relay),
         }
     }
@@ -214,6 +215,42 @@ mod tests {
                 peer_id: peer_id.into(),
             },
         }
+    }
+
+    fn manual(ip: [u8; 4], port: u16) -> Peer {
+        Peer {
+            device_id: None,
+            alias: "direct".into(),
+            reach: Reach::Direct {
+                ip: IpAddr::V4(Ipv4Addr::from(ip)),
+                port,
+            },
+        }
+    }
+
+    #[test]
+    fn manual_peer_without_identity_is_registered_by_address() {
+        let mut r = DeviceRegistry::new();
+        let change = r.upsert(manual([172, 20, 10, 1], 7777), Source::Manual);
+        assert!(matches!(change, Some(Change::Added(_))));
+        assert_eq!(r.len(), 1);
+        assert!(r.get(&PeerKey::Direct("172.20.10.1:7777".into())).is_some());
+    }
+
+    #[test]
+    fn manual_peer_updates_in_place() {
+        let mut r = DeviceRegistry::new();
+        r.upsert(manual([172, 20, 10, 1], 7777), Source::Manual);
+        let mut autre = manual([172, 20, 10, 1], 7777);
+        autre.alias = "iPhone".into();
+        let change = r.upsert(autre, Source::Manual);
+        assert!(matches!(change, Some(Change::Updated(_))));
+        assert_eq!(r.len(), 1);
+        assert_eq!(
+            r.get(&PeerKey::Direct("172.20.10.1:7777".into()))
+                .map(|p| p.alias.as_str()),
+            Some("iPhone")
+        );
     }
 
     #[test]

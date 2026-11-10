@@ -73,21 +73,28 @@ Le script de build Xcode compile automatiquement `libdroplink_ios.a` pour la bon
 
 ## Réseau : le point critique
 
-Deux appareils ne peuvent se voir que s'ils sont **sur le même réseau L2** :
+Deux appareils ne peuvent se découvrir que s'ils sont **sur le même lien réseau** :
 
 - iOS interdit le multicast brut sans l'entitlement Apple `com.apple.developer.networking.multicast`.
   La publication passe donc par Bonjour (`NSNetService`), qui est autorisé sans entitlement.
-- Bonjour ne traverse pas deux réseaux différents. En particulier, un Mac connecté au
-  **partage de connexion** de l'iPhone (`172.20.10.x`) n'est pas sur le même réseau que le Wi-Fi
-  de l'iPhone (`10.x` ou `192.168.x`).
+- Bonjour ne traverse pas deux réseaux différents : un Mac sur un autre Wi-Fi, en VPN ou sur un
+  réseau invité ne verra pas l'iPhone.
+- Le **partage de connexion** iPhone (`172.20.10.0/28`) filtre le multicast de façon
+  intermittente : le pair apparaît puis disparaît. Les deux appareils restent joignables en TCP.
 
-Configuration correcte : les deux appareils sur le **même routeur Wi-Fi**. Vérifier :
+Deux chemins, dans cet ordre :
+
+1. **Découverte auto** (mDNS/Bonjour) — même routeur Wi-Fi, ou partage de connexion quand le
+   multicast passe.
+2. **Connexion directe** — les deux apps affichent `cette machine : <ip>:<port>` sous la liste des
+   pairs. Sur l'autre appareil, saisir cette adresse dans le champ `direct` puis `connecter`.
+   C'est le chemin fiable sur partage de connexion, Wi-Fi invité ou réseau qui filtre mDNS.
+
+Vérifier le sous-réseau côté Mac :
 
 ```bash
-ipconfig getifaddr en0     # Mac
+ipconfig getifaddr en0     # 172.20.10.x = client du partage de connexion iPhone
 ```
-
-et l'IP affichée par l'app iPhone (ou dans les logs). Les deux doivent être dans le même sous-réseau.
 
 ## Logs
 
@@ -108,7 +115,9 @@ xcrun devicectl device copy from --device <UDID> \
 | `Operation not permitted` à la réception | chemin de sandbox d'une ancienne installation | corrigé : le dossier est recalculé à chaque démarrage |
 | Le fichier n'est pas dans Fichiers | `Documents` vide ou app non visible | `UIFileSharingEnabled` est activé ; chercher `Sur mon iPhone > DropLink` |
 | Photos ne reçoit rien | permission « Ajouter des photos » refusée | Réglages → DropLink → Photos → Ajouter |
-| Aucun pair | iPhone et Mac sur deux réseaux différents | même routeur Wi-Fi, pas le partage de connexion |
+| Aucun pair | iPhone et Mac sur deux réseaux différents, ou multicast filtré | même routeur Wi-Fi, ou connexion directe `ip:port` |
+| Le pair apparaît puis disparaît | partage de connexion qui filtre le multicast | connexion directe `ip:port` |
+| L'app iPhone ne publie rien | build installé obsolète ou permission « Réseau local » refusée | réinstaller l'app, Réglages → DropLink → Réseau local |
 | Profil non approuvé | première installation | Réglages → Général → VPN et gestion de l'appareil → Faire confiance |
 
 ## Limites connues
