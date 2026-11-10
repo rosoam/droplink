@@ -172,3 +172,97 @@ servir de signaling et de secours TURN, ce qui évite d'exploiter deux infrastru
 Décision à prendre : accepte-t-on un **petit serveur de signaling** (quelques kilo-octets par
 connexion, pas les fichiers) ? Si non, la seule alternative à distance reste le VPN ou la
 redirection de port manuelle.
+
+## 8. Recherche 2025–2026 : Wi-Fi Aware (NAN), la vraie nouveauté
+
+Wi-Fi Aware (Neighbor Awareness Networking) est le standard Wi-Fi Alliance derrière les
+« AirDrop alternatifs ». iOS 26 l'expose aux apps.
+
+Ce qu'Apple documente :
+
+- découverte et connexion directe **sans point d'accès ni Internet** ;
+- iPhone 12 et plus, iPad récents ;
+- appairage obligatoire, code PIN à 6 chiffres (`DeviceDiscoveryUI`) ;
+- connexions chiffrées au niveau Wi-Fi, haut débit, faible latence ;
+- cohabite avec le Wi-Fi normal (l'iPhone reste connecté à son réseau) ;
+- entitlement `com.apple.developer.wifi-aware` à demander à Apple, services déclarés dans
+  `Info.plist` ;
+- transport via `NetworkListener` / `NetworkBrowser` / `NetworkConnection`, sockets IPv6.
+
+C'est exactement le « sans routeur, haute vitesse, quelques dizaines de mètres » recherché. Mais le
+support par OS est incomplet :
+
+| OS | Wi-Fi Aware (NAN) | Source |
+|---|---|---|
+| iOS 26+ (iPhone 12+) | **oui**, entitlement requis | Apple WWDC25 / docs |
+| iPadOS 26+ | oui | Apple |
+| macOS 26 (app native) | **non** : l'API publique `WACapabilities` n'est pas disponible au type-check ; seuls iOS/iPadOS (et Mac Catalyst) sont exposés | test SDK macOS 26 |
+| Windows 10/11 | **non** : aucune API NAN publique, pas de roadmap | Microsoft Q&A |
+| Linux | **émergent** : patches cfg80211/wpa_supplicant NAN 2025–2026, matériel compatible requis | linux-wireless / hostap |
+
+Conséquence pour le parc demandé (Windows, Linux, macOS, iPhone) : Wi-Fi Aware ne peut pas être la
+technologie unique. Il couvre iPhone ↔ iPhone, et à terme iPhone ↔ Linux avec une carte NAN. Pas
+Windows, pas macOS natif.
+
+### Ce que ça vaut quand même
+
+- iPhone ↔ iPhone : le meilleur transport local, sans routeur, haut débit.
+- iPhone ↔ Linux (matériel NAN) : possible à moyen terme.
+- iPhone ↔ macOS : retomber sur MultipeerConnectivity/AWDL.
+- Windows : LAN ou WebRTC.
+
+## 9. Les idées « code » et « Bluetooth seul »
+
+### Un code peut-il porter le signaling ?
+
+Oui, partiellement. Un QR/code peut transporter une offre SDP et des candidats ICE (version
+« non-trickle »), mais :
+
+- il faut **deux** messages (offre puis réponse), donc deux codes ou un aller-retour ;
+- il faut quand même **STUN** pour connaître l'adresse publique derrière le NAT ;
+- sans TURN, les NAT symétriques et certains réseaux mobiles échouent ;
+- un seul code ne peut pas, à lui seul, établir une connexion bidirectionnelle fiable.
+
+Donc un code remplace le **transport du signaling**, pas le rendez-vous NAT. C'est une solution de
+dépannage pour utilisateurs techniques, pas une UX grand public.
+
+### Bluetooth seul ?
+
+Mesures iOS réelles : L2CAP/GATT plafonnent autour de **20–60 Ko/s** sur iPhone (quelques centaines
+de kbps au mieux, selon les appareils et la configuration). Un JPEG de 5 Mo prend 1,5 à 4 minutes ;
+une vidéo est hors sujet.
+
+Le BLE est bon pour :
+
+- découvrir et appairer ;
+- échanger les métadonnées d'un autre transport ;
+- envoyer du texte ou une petite photo, en dernier recours.
+
+Pas pour le transfert de fichiers sérieux.
+
+## 10. Synthèse : un portefeuille de transports
+
+Aucune technologie unique ne couvre Windows + Linux + macOS + iPhone, à distance, sans serveur.
+
+| Besoin | Transport |
+|---|---|
+| Même réseau | mDNS + TCP direct (déjà là, tous OS) |
+| iPhone ↔ iPhone sans réseau | Wi-Fi Aware (iOS 26, entitlement) |
+| iPhone ↔ macOS sans réseau | MultipeerConnectivity/AWDL |
+| iPhone ↔ Linux sans réseau | Wi-Fi Aware si matériel NAN, sinon LAN |
+| Windows ↔ quoi que ce soit, à distance | WebRTC (signaling + STUN/TURN) ou relais |
+| Partout, secours | relais applicatif |
+| Appairage / petits fichiers | BLE |
+
+La « révolution » réaliste n'est pas une radio unique : c'est un **sélecteur de transport** qui
+prend le meilleur disponible pour la paire d'appareils, sans que l'utilisateur ait à choisir.
+
+## Sources
+
+- Apple, *Supercharge device connectivity with Wi-Fi Aware* (WWDC25) — https://developer.apple.com/videos/play/wwdc2025/228/
+- Apple, *Wi-Fi Aware* — https://developer.apple.com/documentation/wifiaware
+- MacRumors, *iOS 26 Adding Two New Wi-Fi Features* — https://www.macrumors.com/2025/06/21/ios-26-adding-two-new-wi-fi-features/
+- Test SDK macOS 26 (API indisponible) — https://labee.jp/posts/macos-wifi-aware-api-boundary
+- Microsoft Q&A, *Does Windows have plans to support Wi-Fi Aware* — https://learn.microsoft.com/en-us/answers/questions/2284386/does-windows-have-plans-to-support-wifi-aware
+- Linux NAN data path — https://lwn.net/Articles/1059533/
+- Débit BLE iOS — https://interrupt.memfault.com/blog/ble-throughput-primer et retours CoreBluetooth
