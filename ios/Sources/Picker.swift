@@ -1,3 +1,4 @@
+import QuickLook
 import UIKit
 import UniformTypeIdentifiers
 import PhotosUI
@@ -171,6 +172,29 @@ public func droplink_ios_pick_file() {
     DropLinkPicker.shared.present()
 }
 
+/// Quick Look preview, not a share sheet: tapping a received file must show it.
+final class DropLinkPreview: NSObject, QLPreviewControllerDataSource {
+    static let shared = DropLinkPreview()
+    private var current: QLPreviewController?
+    private var url: URL?
+
+    func present(url: URL, from root: UIViewController) {
+        let controller = QLPreviewController()
+        controller.dataSource = self
+        self.url = url
+        self.current = controller
+        root.present(controller, animated: true)
+    }
+
+    func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+        url == nil ? 0 : 1
+    }
+
+    func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+        (url ?? URL(fileURLWithPath: "/")) as NSURL
+    }
+}
+
 @_cdecl("droplink_ios_open_file")
 public func droplink_ios_open_file(_ pathPtr: UnsafePointer<CChar>?) {
     guard let pathPtr else { return }
@@ -178,18 +202,6 @@ public func droplink_ios_open_file(_ pathPtr: UnsafePointer<CChar>?) {
     pickerLog("open requested \(path)")
     DispatchQueue.main.async {
         guard let root = DropLinkPicker.rootViewController() else { return }
-        let url = URL(fileURLWithPath: path)
-        let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        if let popover = activity.popoverPresentationController {
-            popover.sourceView = root.view
-            popover.sourceRect = CGRect(
-                x: root.view.bounds.midX,
-                y: root.view.bounds.midY,
-                width: 1,
-                height: 1
-            )
-            popover.permittedArrowDirections = []
-        }
-        root.present(activity, animated: true)
+        DropLinkPreview.shared.present(url: URL(fileURLWithPath: path), from: root)
     }
 }

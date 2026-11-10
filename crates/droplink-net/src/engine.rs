@@ -126,6 +126,8 @@ pub enum Event {
         file_name: String,
         path: Option<PathBuf>,
         transport: TransportMode,
+        /// Exact size of the file, carried by the engine rather than scraped from UI progress.
+        bytes: u64,
     },
     Failed {
         transfer_id: TransferId,
@@ -133,6 +135,8 @@ pub enum Event {
         file_name: String,
         reason: String,
         transport: TransportMode,
+        /// Size that was attempted, so the history row is not a bare `0 o`.
+        bytes: u64,
     },
     Session {
         code: String,
@@ -686,6 +690,10 @@ async fn send_task(state: Arc<EngineState>, peer: Peer, path: PathBuf) {
     let token = CancellationToken::new();
     state.register_cancel(transfer_id.clone(), token.clone());
 
+    // The final byte count must come from here, not from the UI progress queue: a small file
+    // can finish before the first progress tick, which used to leave a `0 o` history row.
+    let size = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+
     let peer_lock = state.peer_lock(&peer);
     let _guard = peer_lock.lock().await;
 
@@ -727,6 +735,7 @@ async fn send_task(state: Arc<EngineState>, peer: Peer, path: PathBuf) {
             file_name,
             path: Some(path),
             transport: mode,
+            bytes: size,
         }),
         Err(err) => state.emit(Event::Failed {
             transfer_id,
@@ -734,6 +743,7 @@ async fn send_task(state: Arc<EngineState>, peer: Peer, path: PathBuf) {
             file_name,
             reason: err.to_string(),
             transport: mode,
+            bytes: size,
         }),
     }
 }

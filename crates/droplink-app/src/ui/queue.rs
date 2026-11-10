@@ -2,7 +2,7 @@ use eframe::egui;
 
 use crate::state::{UiAction, UiState};
 use crate::theme;
-use crate::ui::{format_bytes, mode_label};
+use crate::ui::format_bytes;
 
 pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
     let mut actions = Vec::new();
@@ -50,11 +50,10 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
             ui.label(
                 theme::mono(
                     format!(
-                        "{}/{}  {}/s  {}",
+                        "{}/{}  {}/s",
                         format_bytes(row.bytes),
                         format_bytes(row.total),
-                        format_bytes(speed as u64),
-                        mode_label(row.transport)
+                        format_bytes(speed as u64)
                     ),
                     9.5,
                 )

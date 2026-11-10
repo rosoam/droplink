@@ -206,9 +206,15 @@ fn renders_toast_and_helpers() {
 
 #[test]
 fn formats_bytes_across_units() {
+    assert_eq!(ui::format_bytes(0), "0 o");
     assert_eq!(ui::format_bytes(10), "10 o");
+    assert_eq!(ui::format_bytes(1023), "1023 o");
+    assert_eq!(ui::format_bytes(1024), "1.0 Ko");
+    assert_eq!(ui::format_bytes(1536), "1.5 Ko");
     assert_eq!(ui::format_bytes(2048), "2.0 Ko");
+    assert_eq!(ui::format_bytes(262144), "256 Ko");
     assert_eq!(ui::format_bytes(3 * 1024 * 1024), "3.0 Mo");
+    assert_eq!(ui::format_bytes(10 * 1024 * 1024), "10 Mo");
     assert!(ui::format_bytes(5 * 1024 * 1024 * 1024).ends_with("Go"));
     assert_eq!(ui::sas_spaced("123456"), "123 456");
     assert_eq!(ui::sas_spaced("12"), "12");
@@ -223,11 +229,25 @@ fn renders_the_connect_dialog() {
 
     let mut state = UiState::new(10);
     state.connect_open = true;
-    state.connect_tab = ConnectTab::Code;
+    state.connect_tab = ConnectTab::Pairs;
     let output = ctx.run(RawInput::default(), |ctx| {
         let _ = ui::connect::show(ctx, &mut state);
     });
     assert!(!output.shapes.is_empty());
+
+    state.devices = vec![Peer {
+        device_id: Some(generate_device_id()),
+        alias: "Téléphone".into(),
+        reach: Reach::Relay {
+            peer_id: "peer-1".into(),
+        },
+    }];
+    let output = ctx.run(RawInput::default(), |ctx| {
+        let _ = ui::connect::show(ctx, &mut state);
+    });
+    assert!(!output.shapes.is_empty());
+
+    state.connect_tab = ConnectTab::Code;
 
     state.session = Some(SessionView {
         code: "ABCD2345".into(),

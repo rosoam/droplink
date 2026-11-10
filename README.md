@@ -217,8 +217,8 @@ Détails et commandes : [`docs/PERF.md`](docs/PERF.md).
 
 Deux appareils sur deux réseaux, sans compte :
 
-1. `pairs → connexion → créer un code` : le serveur émet un code 8 caractères (`ABCD-2345`),
-   valable 5 minutes, renouvelable.
+1. icône `⇄` → onglet `code` → `créer un code` : le serveur émet un code 8 caractères
+   (`ABCD-2345`), valable 5 minutes, renouvelable.
 2. L'autre appareil saisit le code (`rejoindre`).
 3. Le fichier part par le relais ; le destinataire compare le SAS à 6 chiffres avant d'accepter.
 

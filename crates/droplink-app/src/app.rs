@@ -51,6 +51,8 @@ impl App {
 
         let mut state = UiState::new(config.history_len);
         state.history = store::load_history(&paths);
+        #[cfg(target_os = "ios")]
+        state.rebase_history(&config.receive_dir);
 
         let discovery = {
             let (dtx, mut drx) = mpsc::channel(64);
@@ -392,7 +394,7 @@ impl eframe::App for App {
         });
         if !dropped.is_empty() {
             if self.state.selected_peer().is_none() {
-                self.state.toast = Some(Toast::error("Sélectionne un appareil avant de déposer"));
+                self.state.open_connect();
             } else {
                 for action in self.state.on_files_dropped(dropped) {
                     self.dispatch(action);
@@ -416,25 +418,37 @@ impl eframe::App for App {
                     ui.label(
                         egui::RichText::new("droplink")
                             .monospace()
-                            .size(15.0)
+                            .size(14.0)
                             .strong()
                             .color(theme::ACCENT),
                     );
-                    ui.label(theme::mono("v1.0.0", 9.5).color(theme::MUTED));
                     let width = ui.available_width();
                     ui.allocate_ui_with_layout(
                         egui::Vec2::new(width, 22.0),
                         egui::Layout::right_to_left(egui::Align::Center),
                         |ui| {
                             if theme::icon_button(ui, "⚙", "réglages").clicked() {
+                                self.state.connect_open = false;
                                 self.state.settings_open = true;
                             }
-                            ui.label(
-                                egui::RichText::new(format!("* {status}"))
-                                    .monospace()
-                                    .size(9.5)
-                                    .color(status_color),
-                            );
+                            let connect = if self.state.session.is_some() {
+                                theme::icon_button_accent(ui, "⇄", "session en cours — connexion")
+                            } else {
+                                theme::icon_button(ui, "⇄", "connexion")
+                            };
+                            if connect.clicked() {
+                                self.state.open_connect();
+                            }
+                            // Device indicator: a dot and a count, nothing else.
+                            let indicator = if !self.state.discovery_available {
+                                "!".to_string()
+                            } else if self.state.devices.is_empty() {
+                                "*".to_string()
+                            } else {
+                                format!("*{}", self.state.devices.len())
+                            };
+                            ui.label(theme::mono(indicator, 9.5).color(status_color))
+                                .on_hover_text(status);
                         },
                     );
                 });
@@ -451,29 +465,6 @@ impl eframe::App for App {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.add_space(8.0);
-                        let chip = match self.state.session.as_ref() {
-                            Some(session) => {
-                                let left = session
-                                    .expires_at
-                                    .saturating_sub(droplink_core::relay::now_secs());
-                                format!("code {:02}:{:02}", left / 60, left % 60)
-                            }
-                            None => "connexion".to_string(),
-                        };
-                        if theme::section_header_button(
-                            ui,
-                            "pairs",
-                            Some(&format!("{}", self.state.devices.len())),
-                            &chip,
-                        ) {
-                            self.state.connect_open = true;
-                        }
-                        ui.add_space(6.0);
-                        ui::devices::show(ui, &mut self.state);
-
-                        ui.add_space(10.0);
-                        theme::section_header(ui, "envoyer", None);
-                        ui.add_space(6.0);
                         if ui::dropzone::show(ui, &mut self.state, hovering) {
                             picker_requested = true;
                         }
@@ -566,7 +557,8 @@ impl eframe::App for App {
         }
         if picker_requested {
             if self.state.selected_peer().is_none() {
-                self.state.toast = Some(Toast::error("Sélectionne d'abord un appareil"));
+                // No device yet: the connection dialog is the only useful next step.
+                self.state.open_connect();
             } else {
                 self.open_picker();
             }

@@ -24,6 +24,9 @@ pub fn show(ctx: &egui::Context, state: &mut UiState) -> Vec<UiAction> {
     let width = if theme::is_mobile() { 300.0 } else { 340.0 };
     let _ = theme::dialog(ctx, "connexion", width, &mut open, |ui| {
         ui.horizontal(|ui| {
+            if tab(ui, "appareils", state.connect_tab == ConnectTab::Pairs).clicked() {
+                state.connect_tab = ConnectTab::Pairs;
+            }
             if tab(ui, "code", state.connect_tab == ConnectTab::Code).clicked() {
                 state.connect_tab = ConnectTab::Code;
             }
@@ -33,12 +36,32 @@ pub fn show(ctx: &egui::Context, state: &mut UiState) -> Vec<UiAction> {
         });
         ui.add_space(8.0);
         match state.connect_tab {
+            ConnectTab::Pairs => pairs_tab(ui, state),
             ConnectTab::Code => code_tab(ui, state, &mut actions),
             ConnectTab::Direct => direct_tab(ui, state, &mut actions),
         }
     });
     state.connect_open = open;
     actions
+}
+
+fn pairs_tab(ui: &mut egui::Ui, state: &mut UiState) {
+    if crate::ui::devices::show(ui, state) {
+        // Clicking a device selects it and gets out of the way.
+        state.connect_open = false;
+    }
+    ui.add_space(4.0);
+    ui.label(
+        theme::mono(
+            if state.devices.is_empty() {
+                "crée un code (onglet code) ou saisis une adresse."
+            } else {
+                "clique un appareil pour l'utiliser."
+            },
+            9.0,
+        )
+        .color(theme::MUTED),
+    );
 }
 
 fn code_tab(ui: &mut egui::Ui, state: &mut UiState, actions: &mut Vec<UiAction>) {

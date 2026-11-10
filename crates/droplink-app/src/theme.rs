@@ -148,14 +148,22 @@ pub fn dialog<T>(
     if !*open {
         return None;
     }
+    let id = egui::Id::new(("dialog", title));
+    // The click that opens the dialog must not also count as a click on the backdrop.
+    let armed = ctx.memory(|memory| {
+        memory
+            .data
+            .get_temp::<bool>(id.with("armed"))
+            .unwrap_or(false)
+    });
+    if !armed {
+        ctx.memory_mut(|memory| memory.data.insert_temp(id.with("armed"), true));
+    }
+
     let mut keep_open = true;
-    let response = egui::Window::new(title)
-        .id(egui::Id::new(("dialog", title)))
-        .title_bar(false)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+    let response = egui::Modal::new(id)
         .frame(dialog_frame())
+        .backdrop_color(Color32::from_black_alpha(160))
         .show(ctx, |ui| {
             ui.set_width(width);
             ui.horizontal(|ui| {
@@ -183,12 +191,14 @@ pub fn dialog<T>(
             add(ui)
         });
 
-    let escaped = ctx.input(|input| input.key_pressed(egui::Key::Escape));
-    if !keep_open || escaped || response.is_none() {
+    let escape = ctx.input(|input| input.key_pressed(egui::Key::Escape));
+    let outside = armed && response.backdrop_response.clicked();
+    if !keep_open || escape || outside {
         *open = false;
+        ctx.memory_mut(|memory| memory.data.remove::<bool>(id.with("armed")));
         return None;
     }
-    response.and_then(|response| response.inner)
+    Some(response.inner)
 }
 
 /// Compact bordered button for secondary chrome (dialogs, headers).
@@ -199,36 +209,6 @@ pub fn compact_button(ui: &mut egui::Ui, label: &str) -> Response {
 /// Compact accented button for the primary action of a dialog.
 pub fn compact_primary(ui: &mut egui::Ui, label: &str) -> Response {
     button(ui, label, ACCENT, true)
-}
-
-/// Section header with a compact action button on the right. Returns true when clicked.
-pub fn section_header_button(
-    ui: &mut egui::Ui,
-    title: &str,
-    meta: Option<&str>,
-    action: &str,
-) -> bool {
-    let mut clicked = false;
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(format!("-- {}", title.to_lowercase()))
-                .monospace()
-                .size(10.5)
-                .color(MUTED),
-        );
-        let width = ui.available_width();
-        ui.allocate_ui_with_layout(
-            Vec2::new(width, button_height() + 2.0),
-            egui::Layout::right_to_left(egui::Align::Center),
-            |ui| {
-                clicked = compact_button(ui, action).clicked();
-                if let Some(meta) = meta {
-                    ui.label(RichText::new(meta).monospace().size(10.5).color(MUTED));
-                }
-            },
-        );
-    });
-    clicked
 }
 
 pub fn key_value(ui: &mut egui::Ui, key: &str, value: &str) {
@@ -276,9 +256,21 @@ pub fn muted_button(ui: &mut egui::Ui, label: &str) -> Response {
 
 /// Square icon button (close, cancel, refresh). The second argument is the hover tooltip.
 pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tooltip: &str) -> Response {
+    icon_button_colored(ui, glyph, tooltip, MUTED)
+}
+
+/// Accented icon button, used for an active session in the top bar.
+pub fn icon_button_accent(ui: &mut egui::Ui, glyph: &str, tooltip: &str) -> Response {
+    icon_button_colored(ui, glyph, tooltip, ACCENT)
+}
+
+fn icon_button_colored(ui: &mut egui::Ui, glyph: &str, tooltip: &str, color: Color32) -> Response {
     ui.add(
-        egui::Button::new(RichText::new(glyph).monospace().size(11.5).color(MUTED))
-            .stroke(Stroke::new(1.0, BORDER))
+        egui::Button::new(RichText::new(glyph).monospace().size(11.5).color(color))
+            .stroke(Stroke::new(
+                1.0,
+                if color == ACCENT { ACCENT } else { BORDER },
+            ))
             .corner_radius(CornerRadius::same(3))
             .min_size(Vec2::splat(button_height())),
     )
@@ -293,10 +285,13 @@ pub fn row(
 ) -> Response {
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, row_height()), egui::Sense::hover());
-    let response = ui.interact(rect, id, egui::Sense::click());
-    if !selected && response.hovered() {
-        ui.painter()
-            .rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(255, 255, 255, 6));
+    let hovered = ui.rect_contains_pointer(rect);
+    if !selected && hovered {
+        ui.painter().rect_filled(
+            rect,
+            0.0,
+            Color32::from_rgba_unmultiplied(255, 255, 255, 12),
+        );
     }
     if selected {
         ui.painter().rect_filled(rect, 0.0, ACCENT_DIM);
@@ -313,7 +308,10 @@ pub fn row(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
         add,
     );
-    if response.hovered() {
+    // Interaction is registered **after** the content so the whole row (text included) is
+    // clickable; labels do not sense clicks, but the overlay guarantees it.
+    let response = ui.interact(rect, id.with("hit"), egui::Sense::click());
+    if hovered || response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     response

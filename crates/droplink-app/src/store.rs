@@ -130,6 +130,17 @@ pub fn load_history(paths: &Paths) -> Vec<crate::state::HistoryEntry> {
             entries
                 .into_iter()
                 .filter(|entry| entry.ok && entry.path.is_some())
+                .map(|mut entry| {
+                    // Old rows were saved with `bytes: 0`; the file is still on disk.
+                    if entry.bytes == 0 {
+                        if let Some(path) = entry.path.as_deref() {
+                            if let Ok(meta) = std::fs::metadata(path) {
+                                entry.bytes = meta.len();
+                            }
+                        }
+                    }
+                    entry
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -184,6 +195,28 @@ mod tests {
         let loaded = load_history(&paths);
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].file_name, "a.bin");
+    }
+
+    #[test]
+    fn load_history_backfills_zero_bytes_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths {
+            dir: dir.path().to_path_buf(),
+        };
+        let file = dir.path().join("x.bin");
+        std::fs::write(&file, b"12345").unwrap();
+        let entries = vec![crate::state::HistoryEntry {
+            file_name: "x.bin".into(),
+            direction: droplink_core::protocol::Direction::Send,
+            ok: true,
+            path: Some(file.to_string_lossy().to_string()),
+            transport: droplink_core::protocol::TransportMode::Direct,
+            bytes: 0,
+        }];
+        save_history(&paths, &entries);
+        let loaded = load_history(&paths);
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].bytes, 5);
     }
 
     #[test]

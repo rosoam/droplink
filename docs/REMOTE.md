@@ -5,11 +5,11 @@ par un relais qui ne voit que du chiffrement.
 
 ## Parcours
 
-1. **Hôte** : `pairs → [ connexion ]`, onglet `code`, puis `[ créer un code ]`. Le code s'affiche (`ABCD-2345`) avec un compte à
+1. **Hôte** : icône `⇄` dans la barre du haut → onglet `code` → `[ créer un code ]`. Le code s'affiche (`ABCD-2345`) avec un compte à
    rebours de 5 minutes. `[ copier ]` ou, sur iPhone, `[ partager ]`.
-2. **Invité** : `pairs → [ connexion ]`, onglet `code`, saisit le code puis `[ rejoindre ]`. Les deux apparaissent
+2. **Invité** : icône `⇄` → onglet `code`, saisit le code puis `[ rejoindre ]`. Les deux apparaissent
    dans la liste `pairs` avec l'étiquette `relay`.
-3. **Transfert** : sélectionner l'appareil, déposer le fichier. Le destinataire voit une demande
+3. **Transfert** : icône `⇄` → onglet `appareils` pour choisir l'appareil, puis déposer le fichier. Le destinataire voit une demande
    avec un **SAS à 6 chiffres** ; les deux personnes le comparent avant d'accepter.
 4. **Fin** : `[ terminer ]` côté hôte, `[ quitter ]` côté invité. Sinon le code expire, et la
    session meurt une heure après sa création.

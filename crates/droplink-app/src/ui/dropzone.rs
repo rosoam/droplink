@@ -46,14 +46,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut UiState, hovering: bool) -> bool {
                     theme::mono(
                         match &selected {
                             Some(name) => format!("-> {name}"),
-                            None => "aucun appareil sélectionné".to_string(),
+                            None => "aucun appareil — connecte pour envoyer".to_string(),
                         },
                         10.5,
                     )
                     .color(theme::MUTED),
                 );
                 ui.add_space(6.0);
-                if theme::action_button(ui, "choisir").clicked() {
+                let label = if selected.is_some() {
+                    "choisir"
+                } else {
+                    "connecter"
+                };
+                if theme::action_button(ui, label).clicked() {
                     picker = true;
                 }
             });

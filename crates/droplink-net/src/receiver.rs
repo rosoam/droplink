@@ -167,6 +167,7 @@ where
             file_name: meta.file_name,
             reason: "refusé ou délai dépassé".into(),
             transport: mode,
+            bytes: meta.file_size,
         });
         return Ok(());
     }
@@ -190,6 +191,7 @@ where
                 file_name: meta.file_name,
                 path: Some(final_path),
                 transport: mode,
+                bytes: meta.file_size,
             });
             state.progress_remove(&meta.transfer_id);
             let sealed = session.seal(&serde_json::to_vec(&Control::Done {
@@ -207,6 +209,7 @@ where
                 file_name: meta.file_name,
                 reason: err.to_string(),
                 transport: mode,
+                bytes: meta.file_size,
             });
             state.progress_remove(&meta.transfer_id);
             let sealed = session.seal(&serde_json::to_vec(&Control::Done {

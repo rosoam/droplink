@@ -12,16 +12,19 @@ mod render_tests;
 use droplink_core::protocol::TransportMode;
 
 pub fn format_bytes(bytes: u64) -> String {
-    const KB: f64 = 1024.0;
-    let bytes = bytes as f64;
-    if bytes < KB {
-        format!("{bytes:.0} o")
-    } else if bytes < KB * KB {
-        format!("{:.1} Ko", bytes / KB)
-    } else if bytes < KB * KB * KB {
-        format!("{:.1} Mo", bytes / (KB * KB))
+    const UNITS: [&str; 5] = ["o", "Ko", "Mo", "Go", "To"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{value:.0} o")
+    } else if value < 10.0 {
+        format!("{value:.1} {}", UNITS[unit])
     } else {
-        format!("{:.2} Go", bytes / (KB * KB * KB))
+        format!("{value:.0} {}", UNITS[unit])
     }
 }
 

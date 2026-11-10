@@ -105,6 +105,7 @@ impl Toast {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ConnectTab {
     #[default]
+    Pairs,
     Code,
     Direct,
 }
@@ -155,6 +156,47 @@ impl UiState {
     }
 
     /// Click a peer: select it, or unselect it when it is already selected.
+    /// Relink received files whose absolute path points at a previous iOS data container.
+    ///
+    /// iOS changes the container UUID between installs: the file is still in `Documents/DropLink`
+    /// but the stored path no longer exists, so opening it said "fichier introuvable".
+    pub fn rebase_history(&mut self, receive_dir: &std::path::Path) {
+        for entry in &mut self.history {
+            if entry.direction != Direction::Receive {
+                continue;
+            }
+            let alive = entry
+                .path
+                .as_deref()
+                .map(|path| std::path::Path::new(path).exists())
+                .unwrap_or(false);
+            if alive {
+                continue;
+            }
+            let candidate = receive_dir.join(&entry.file_name);
+            if candidate.exists() {
+                if entry.bytes == 0 {
+                    if let Ok(meta) = std::fs::metadata(&candidate) {
+                        entry.bytes = meta.len();
+                    }
+                }
+                entry.path = Some(candidate.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    /// Open the connection dialog on the most useful tab: the active code, the device list,
+    /// or the code form when no device is known yet.
+    pub fn open_connect(&mut self) {
+        self.connect_tab = if self.session.is_some() || self.devices.is_empty() {
+            ConnectTab::Code
+        } else {
+            ConnectTab::Pairs
+        };
+        self.settings_open = false;
+        self.connect_open = true;
+    }
+
     pub fn toggle_selected(&mut self, key: PeerKey) {
         if self.selected.as_ref() == Some(&key) {
             self.selected = None;
@@ -321,13 +363,17 @@ impl UiState {
                 file_name,
                 path,
                 transport,
+                bytes,
             } => {
-                let bytes = self
-                    .queue
-                    .iter()
-                    .find(|row| row.transfer_id == transfer_id)
-                    .map(|row| row.bytes)
-                    .unwrap_or(0);
+                // Older engines and persisted rows can carry 0; recover it from the file itself.
+                let bytes = if bytes > 0 {
+                    bytes
+                } else {
+                    path.as_ref()
+                        .and_then(|path| std::fs::metadata(path).ok())
+                        .map(|meta| meta.len())
+                        .unwrap_or(0)
+                };
                 self.queue.retain(|row| row.transfer_id != transfer_id);
                 self.incoming.remove(&transfer_id);
                 self.sas.remove(&transfer_id);
@@ -512,13 +558,14 @@ mod tests {
     fn completed_moves_to_history() {
         let mut state = UiState::new(10);
         state.apply(queued("t1", "f.bin"));
-        state.apply(progress("t1", 100, 100));
+        // No progress event at all: the size must come from the completion event.
         state.apply(Event::Completed {
             transfer_id: "t1".into(),
             direction: Direction::Send,
             file_name: "f.bin".into(),
             path: None,
             transport: TransportMode::Direct,
+            bytes: 100,
         });
         assert!(state.queue.is_empty());
         assert_eq!(state.history.len(), 1);
@@ -539,6 +586,7 @@ mod tests {
             file_name: "b.bin".into(),
             reason: "boom".into(),
             transport: TransportMode::Direct,
+            bytes: 0,
         });
         assert_eq!(state.queue.len(), 1);
         assert_eq!(state.queue[0].transfer_id, "t1");
@@ -637,6 +685,7 @@ mod tests {
             file_name: "a.bin".into(),
             reason: "connexion refusée".into(),
             transport: TransportMode::Direct,
+            bytes: 0,
         });
         assert!(state.queue.is_empty());
         assert!(state.history.is_empty());
@@ -656,9 +705,32 @@ mod tests {
             file_name: "ghost.bin".into(),
             path: None,
             transport: TransportMode::Direct,
+            bytes: 0,
         });
         assert!(state.queue.is_empty());
         assert_eq!(state.history.len(), 1);
+    }
+
+    #[test]
+    fn rebase_history_relinks_a_received_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let received = dir.path().join("photo.jpg");
+        std::fs::write(&received, b"1234567").unwrap();
+        let mut state = UiState::new(10);
+        state.history.push(HistoryEntry {
+            file_name: "photo.jpg".into(),
+            direction: Direction::Receive,
+            ok: true,
+            path: Some("/private/var/old-container/Documents/DropLink/photo.jpg".into()),
+            transport: TransportMode::Direct,
+            bytes: 0,
+        });
+        state.rebase_history(dir.path());
+        assert_eq!(
+            state.history[0].path.as_deref(),
+            Some(received.to_string_lossy().as_ref())
+        );
+        assert_eq!(state.history[0].bytes, 7);
     }
 
     #[test]
@@ -703,12 +775,13 @@ mod proptest_tests {
                 direction: Direction::Send,
                 transport: TransportMode::Direct,
             }),
-            ids.clone().prop_map(|id| Event::Completed {
+            (ids.clone(), 0u64..1_000_000u64).prop_map(|(id, bytes)| Event::Completed {
                 transfer_id: id,
                 direction: Direction::Send,
                 file_name: "f".into(),
                 path: None,
                 transport: TransportMode::Direct,
+                bytes,
             }),
             ids.prop_map(|id| Event::Failed {
                 transfer_id: id,
@@ -716,6 +789,7 @@ mod proptest_tests {
                 file_name: "f".into(),
                 reason: "boom".into(),
                 transport: TransportMode::Direct,
+                bytes: 0,
             }),
         ]
     }

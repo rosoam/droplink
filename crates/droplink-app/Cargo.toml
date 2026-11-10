@@ -48,4 +48,5 @@ identifier = "com.droplink.desktop"
 short_description = "Transfert de fichiers P2P chiffré"
 long_description = "DropLink transfère des fichiers entre appareils du même réseau, sans compte et sans serveur, avec chiffrement de bout en bout."
 category = "Utility"
+icon = ["../../assets/icon.icns"]
 osx_minimum_system_version = "11.0"
