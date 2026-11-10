@@ -270,3 +270,26 @@ async fn session_transfer_100mib() {
     );
     relay.abort();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_relay_socket_until_a_session_is_requested() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let accepted = tokio::spawn(async move { listener.accept().await });
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = EngineConfig::new(
+        Uuid::new_v4().to_string(),
+        "idle".into(),
+        dir.path().join("recv"),
+    );
+    cfg.relay_url = Some(format!("ws://127.0.0.1:{port}/ws"));
+    let (handle, _bound, _events) = spawn(cfg).unwrap();
+
+    let result = tokio::time::timeout(Duration::from_millis(600), accepted).await;
+    assert!(
+        result.is_err(),
+        "engine opened a relay socket before any session command"
+    );
+    handle.command(Command::Shutdown);
+}
