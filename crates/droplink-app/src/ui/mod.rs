@@ -3,6 +3,7 @@ pub mod devices;
 pub mod dropzone;
 pub mod history;
 pub mod queue;
+pub mod session;
 pub mod settings;
 
 #[cfg(test)]

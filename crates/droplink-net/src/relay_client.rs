@@ -14,6 +14,11 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::PollSender;
 use url::Url;
 
+/// Client-to-relay queue depth. `poll_write` applies backpressure when full.
+const OUT_QUEUE: usize = 8;
+/// Incoming circuit chunks buffered before the reader is slowed down.
+const CIRCUIT_QUEUE: usize = 16;
+
 #[derive(Debug, Clone)]
 pub enum WsOut {
     Text(ClientMsg),
@@ -22,8 +27,40 @@ pub enum WsOut {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelayEvent {
+    Created {
+        code: String,
+        token: String,
+        expires_at: u64,
+        ttl_secs: u64,
+    },
+    Joined {
+        expires_at: u64,
+        ttl_secs: u64,
+        peers: Vec<PeerSummary>,
+        token: String,
+    },
+    Resumed {
+        code: String,
+        expires_at: u64,
+        ttl_secs: u64,
+        peers: Vec<PeerSummary>,
+    },
+    Refreshed {
+        code: String,
+        expires_at: u64,
+        ttl_secs: u64,
+    },
+    SessionEnded {
+        reason: String,
+    },
     Peers(Vec<PeerSummary>),
-    Incoming { circuit_id: String },
+    Incoming {
+        circuit_id: String,
+    },
+    Error {
+        code: String,
+        message: String,
+    },
     Disconnected,
 }
 
@@ -33,7 +70,6 @@ pub(crate) struct RelayInner {
     receivers: Mutex<HashMap<String, mpsc::Receiver<Vec<u8>>>>,
     pending: Mutex<HashMap<PeerId, oneshot::Sender<String>>>,
     events: mpsc::Sender<RelayEvent>,
-    peer_id: Mutex<Option<PeerId>>,
 }
 
 pub struct RelayClient {
@@ -43,19 +79,14 @@ pub struct RelayClient {
 }
 
 impl RelayClient {
-    pub async fn connect(
-        url: &str,
-        device_id: &str,
-        alias: &str,
-        room: Option<&str>,
-        events: mpsc::Sender<RelayEvent>,
-    ) -> Result<Self> {
+    /// Open the socket. Nothing is registered until a session message is sent.
+    pub async fn connect(url: &str, events: mpsc::Sender<RelayEvent>) -> Result<Self> {
         let url = Url::parse(url).map_err(|e| Error::Protocol(e.to_string()))?;
         let (socket, _) = connect_async(url.as_str())
             .await
             .map_err(|e| Error::Protocol(format!("relay unreachable: {e}")))?;
         let (mut sink, mut stream) = socket.split();
-        let (out_tx, mut out_rx) = mpsc::channel::<WsOut>(256);
+        let (out_tx, mut out_rx) = mpsc::channel::<WsOut>(OUT_QUEUE);
 
         let inner = Arc::new(RelayInner {
             out: out_tx.clone(),
@@ -63,7 +94,6 @@ impl RelayClient {
             receivers: Mutex::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
             events,
-            peer_id: Mutex::new(None),
         });
 
         let writer = tokio::spawn(async move {
@@ -81,24 +111,75 @@ impl RelayClient {
             }
         });
 
-        let (reg_tx, reg_rx) = oneshot::channel();
         let reader_inner = inner.clone();
         let reader = tokio::spawn(async move {
-            let mut reg_tx = Some(reg_tx);
             while let Some(message) = stream.next().await {
                 match message {
                     Ok(Message::Text(text)) => {
                         let Ok(server) = serde_json::from_str::<ServerMsg>(text.as_str()) else {
+                            // An unknown message means a protocol drift: say it instead of
+                            // waiting forever for a reply that will never come.
+                            let _ = reader_inner.events.try_send(RelayEvent::Error {
+                                code: "bad_message".into(),
+                                message: "unrecognised server message".into(),
+                            });
                             continue;
                         };
                         match server {
-                            ServerMsg::Registered { peer_id } => {
-                                if let Ok(mut slot) = reader_inner.peer_id.lock() {
-                                    *slot = Some(peer_id.clone());
-                                }
-                                if let Some(tx) = reg_tx.take() {
-                                    let _ = tx.send(peer_id);
-                                }
+                            ServerMsg::SessionCreated {
+                                code,
+                                token,
+                                expires_at,
+                                ttl_secs,
+                            } => {
+                                let _ = reader_inner.events.try_send(RelayEvent::Created {
+                                    code,
+                                    token,
+                                    expires_at,
+                                    ttl_secs,
+                                });
+                            }
+                            ServerMsg::SessionJoined {
+                                expires_at,
+                                ttl_secs,
+                                peers,
+                                token,
+                            } => {
+                                let _ = reader_inner.events.try_send(RelayEvent::Joined {
+                                    expires_at,
+                                    ttl_secs,
+                                    peers,
+                                    token,
+                                });
+                            }
+                            ServerMsg::SessionResumed {
+                                code,
+                                expires_at,
+                                ttl_secs,
+                                peers,
+                            } => {
+                                let _ = reader_inner.events.try_send(RelayEvent::Resumed {
+                                    code,
+                                    expires_at,
+                                    ttl_secs,
+                                    peers,
+                                });
+                            }
+                            ServerMsg::SessionRefreshed {
+                                code,
+                                expires_at,
+                                ttl_secs,
+                            } => {
+                                let _ = reader_inner.events.try_send(RelayEvent::Refreshed {
+                                    code,
+                                    expires_at,
+                                    ttl_secs,
+                                });
+                            }
+                            ServerMsg::SessionEnded { reason } => {
+                                let _ = reader_inner
+                                    .events
+                                    .try_send(RelayEvent::SessionEnded { reason });
                             }
                             ServerMsg::RoomUpdate { peers } => {
                                 let _ = reader_inner.events.try_send(RelayEvent::Peers(peers));
@@ -118,7 +199,7 @@ impl RelayClient {
                                         let _ = tx.send(circuit_id);
                                     }
                                 } else {
-                                    let (tx, rx) = mpsc::channel(64);
+                                    let (tx, rx) = mpsc::channel(CIRCUIT_QUEUE);
                                     if let Ok(mut map) = reader_inner.circuits.lock() {
                                         map.insert(circuit_id.clone(), tx);
                                     }
@@ -137,6 +218,9 @@ impl RelayClient {
                             }
                             ServerMsg::Error { code, message } => {
                                 tracing::warn!(%code, %message, "relay error");
+                                let _ = reader_inner
+                                    .events
+                                    .try_send(RelayEvent::Error { code, message });
                             }
                         }
                     }
@@ -148,7 +232,23 @@ impl RelayClient {
                                 .ok()
                                 .and_then(|map| map.get(&circuit_id).cloned());
                             if let Some(sender) = sender {
-                                let _ = sender.try_send(payload.to_vec());
+                                // Awaiting here is the whole point: a full circuit queue must
+                                // slow the WebSocket reader (and therefore the sender), never
+                                // drop a frame. A dropped frame corrupts the AEAD stream.
+                                match tokio::time::timeout(
+                                    Duration::from_secs(30),
+                                    sender.send(payload.to_vec()),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(())) => {}
+                                    _ => {
+                                        let _ = reader_inner.events.try_send(RelayEvent::Error {
+                                            code: "backpressure".into(),
+                                            message: "receiver stalled for 30 s".into(),
+                                        });
+                                    }
+                                }
                             }
                         }
                     }
@@ -166,37 +266,56 @@ impl RelayClient {
             let _ = reader_inner.events.try_send(RelayEvent::Disconnected);
         });
 
-        out_tx
-            .send(WsOut::Text(ClientMsg::Register {
-                device_id: device_id.to_string(),
-                alias: alias.to_string(),
-                room: room.map(str::to_string),
-            }))
-            .await
-            .map_err(|_| Error::Protocol("relay writer closed".into()))?;
-
-        let registration = tokio::time::timeout(Duration::from_secs(5), reg_rx).await;
-        match registration {
-            Ok(Ok(peer_id)) => {
-                if let Ok(mut slot) = inner.peer_id.lock() {
-                    *slot = Some(peer_id);
-                }
-                Ok(Self {
-                    inner,
-                    writer,
-                    reader,
-                })
-            }
-            _ => {
-                writer.abort();
-                reader.abort();
-                Err(Error::Timeout)
-            }
-        }
+        Ok(Self {
+            inner,
+            writer,
+            reader,
+        })
     }
 
-    pub fn peer_id(&self) -> Option<PeerId> {
-        self.inner.peer_id.lock().ok().and_then(|slot| slot.clone())
+    async fn send(&self, message: ClientMsg) -> Result<()> {
+        self.inner
+            .out
+            .send(WsOut::Text(message))
+            .await
+            .map_err(|_| Error::Protocol("relay writer closed".into()))
+    }
+
+    pub async fn create_session(&self, device_id: &str, alias: &str) -> Result<()> {
+        self.send(ClientMsg::CreateSession {
+            proto: droplink_core::protocol::PROTOCOL_VERSION,
+            device_id: device_id.to_string(),
+            alias: alias.to_string(),
+        })
+        .await
+    }
+
+    pub async fn join_session(&self, device_id: &str, alias: &str, code: &str) -> Result<()> {
+        self.send(ClientMsg::JoinSession {
+            proto: droplink_core::protocol::PROTOCOL_VERSION,
+            device_id: device_id.to_string(),
+            alias: alias.to_string(),
+            code: code.to_string(),
+        })
+        .await
+    }
+
+    pub async fn resume_session(&self, token: &str) -> Result<()> {
+        self.send(ClientMsg::ResumeSession {
+            token: token.to_string(),
+        })
+        .await
+    }
+
+    pub async fn refresh_session(&self, token: &str) -> Result<()> {
+        self.send(ClientMsg::RefreshSession {
+            token: token.to_string(),
+        })
+        .await
+    }
+
+    pub async fn leave_session(&self) -> Result<()> {
+        self.send(ClientMsg::LeaveSession).await
     }
 
     /// Open an outgoing circuit to `peer_id` and wait for the relay to pair both sides.
@@ -205,13 +324,10 @@ impl RelayClient {
         if let Ok(mut pending) = self.inner.pending.lock() {
             pending.insert(peer_id.to_string(), tx);
         }
-        self.inner
-            .out
-            .send(WsOut::Text(ClientMsg::Connect {
-                peer_id: peer_id.to_string(),
-            }))
-            .await
-            .map_err(|_| Error::Protocol("relay writer closed".into()))?;
+        self.send(ClientMsg::Connect {
+            peer_id: peer_id.to_string(),
+        })
+        .await?;
 
         let circuit_id = match tokio::time::timeout(Duration::from_secs(10), rx).await {
             Ok(Ok(circuit_id)) => circuit_id,
@@ -223,7 +339,7 @@ impl RelayClient {
             }
         };
 
-        let (data_tx, data_rx) = mpsc::channel(64);
+        let (data_tx, data_rx) = mpsc::channel(CIRCUIT_QUEUE);
         if let Ok(mut map) = self.inner.circuits.lock() {
             map.insert(circuit_id.clone(), data_tx);
         }
@@ -354,14 +470,7 @@ mod tests {
     #[tokio::test]
     async fn unreachable_relay_returns_error() {
         let (tx, _rx) = mpsc::channel(1);
-        let result = RelayClient::connect(
-            "ws://127.0.0.1:1/ws",
-            "11111111-1111-4111-8111-111111111111",
-            "test",
-            None,
-            tx,
-        )
-        .await;
+        let result = RelayClient::connect("ws://127.0.0.1:1/ws", tx).await;
         assert!(result.is_err());
     }
 }

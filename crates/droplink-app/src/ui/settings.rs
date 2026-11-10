@@ -9,9 +9,7 @@ pub struct SettingsDraft {
     pub device_name: String,
     pub receive_dir: String,
     pub port_pref: String,
-    pub relay_enabled: bool,
     pub relay_url: String,
-    pub room_code: String,
 }
 
 impl SettingsDraft {
@@ -23,9 +21,7 @@ impl SettingsDraft {
                 .port_pref
                 .map(|port| port.to_string())
                 .unwrap_or_default(),
-            relay_enabled: config.relay_enabled,
             relay_url: config.relay_url.clone().unwrap_or_default(),
-            room_code: config.room_code.clone().unwrap_or_default(),
         }
     }
 
@@ -46,17 +42,13 @@ impl SettingsDraft {
                     .map_err(|_| Error::Protocol("port invalide".into()))?,
             )
         };
-        config.relay_enabled = self.relay_enabled;
         config.relay_url = if self.relay_url.trim().is_empty() {
             None
         } else {
             Some(self.relay_url.trim().to_string())
         };
-        config.room_code = if self.room_code.trim().is_empty() {
-            None
-        } else {
-            Some(self.room_code.trim().to_string())
-        };
+        // `relay_enabled` and `room_code` are kept in the config for migration only; the UI no
+        // longer exposes them. Preserve the stored values instead of silently resetting them.
         config.validate()?;
         Ok(config)
     }
@@ -132,10 +124,14 @@ pub fn show(
             ui.add_space(4.0);
             ui.label(theme::mono("-- réseau", 10.0).color(theme::MUTED));
             ui.add_space(4.0);
-            ui.checkbox(&mut draft.relay_enabled, "Activer le relay");
-            ui.add_space(4.0);
             field(ui, "URL du relay", &mut draft.relay_url);
-            field(ui, "Code de room (optionnel)", &mut draft.room_code);
+            ui.label(
+                theme::mono(
+                    "utilisé seulement quand tu crées ou rejoins une session",
+                    9.0,
+                )
+                .color(theme::MUTED),
+            );
 
             if let Some(message) = error.as_deref() {
                 ui.add_space(2.0);

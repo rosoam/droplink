@@ -31,9 +31,7 @@ impl Node {
             name.to_string(),
             dir.path().join("recv"),
         );
-        cfg.relay_enabled = true;
         cfg.relay_url = Some(format!("ws://127.0.0.1:{relay_port}/ws"));
-        cfg.room_code = Some("test-room".into());
         let (handle, _bound, events) = spawn(cfg).unwrap();
         Self {
             handle,
@@ -53,6 +51,49 @@ fn start_relay() -> (u16, JoinHandle<()>) {
         let _ = serve(listener, state, std::future::pending()).await;
     });
     (port, task)
+}
+
+async fn wait_session_code(events: &mut mpsc::Receiver<Event>) -> String {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        assert!(!remaining.is_zero(), "timeout waiting for a session");
+        match tokio::time::timeout(remaining, events.recv()).await {
+            Ok(Some(Event::Session {
+                code, owner: true, ..
+            })) => return code,
+            Ok(Some(Event::SessionError { code, message })) => {
+                panic!("session error: {code} {message}")
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("event channel closed"),
+            Err(_) => panic!("timeout waiting for a session"),
+        }
+    }
+}
+
+async fn create_session(node: &mut Node) -> String {
+    node.handle.command(Command::SessionCreate);
+    wait_session_code(&mut node.events).await
+}
+
+async fn join_session(node: &mut Node, code: &str) {
+    node.handle
+        .command(Command::SessionJoin { code: code.into() });
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        assert!(!remaining.is_zero(), "timeout waiting for join");
+        match tokio::time::timeout(remaining, node.events.recv()).await {
+            Ok(Some(Event::Session { owner: false, .. })) => return,
+            Ok(Some(Event::SessionError { code, message })) => {
+                panic!("join error: {code} {message}")
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("event channel closed"),
+            Err(_) => panic!("timeout waiting for join"),
+        }
+    }
 }
 
 async fn wait_relay_peer(events: &mut mpsc::Receiver<Event>) -> Peer {
@@ -154,6 +195,8 @@ async fn relay_to_relay_8mib() {
     let (port, relay) = start_relay();
     let mut a = Node::start("A", port);
     let mut b = Node::start("B", port);
+    let code = create_session(&mut a).await;
+    join_session(&mut b, &code).await;
 
     let peer_b = wait_relay_peer(&mut a.events).await;
     let source = write_pattern_file(a.dir.path(), "relay.bin", 8 * 1024 * 1024);
@@ -189,6 +232,8 @@ async fn relay_no_plaintext_leak() {
 
     let mut a = Node::start("A", proxy_port);
     let mut b = Node::start("B", proxy_port);
+    let code = create_session(&mut a).await;
+    join_session(&mut b, &code).await;
     let peer_b = wait_relay_peer(&mut a.events).await;
 
     let size = 8 * 1024 * 1024;
@@ -227,6 +272,8 @@ async fn relay_drop_fails_fast() {
 
     let mut a = Node::start("A", proxy_port);
     let mut b = Node::start("B", proxy_port);
+    let code = create_session(&mut a).await;
+    join_session(&mut b, &code).await;
     let peer_b = wait_relay_peer(&mut a.events).await;
 
     let source = write_pattern_file(a.dir.path(), "drop.bin", 64 * 1024 * 1024);
@@ -263,6 +310,8 @@ async fn relay_reconnect_recovers() {
 
     let mut a = Node::start("A", proxy_port);
     let mut b = Node::start("B", proxy_port);
+    let code = create_session(&mut a).await;
+    join_session(&mut b, &code).await;
     let _ = wait_relay_peer(&mut a.events).await;
 
     // Drop every proxied connection: the engines must notice and reconnect.

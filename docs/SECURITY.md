@@ -58,3 +58,15 @@ n'apparaît jamais dans les frames relayées.
   action explicite de l'utilisateur. Un `room_code` explicite permet d'isoler un groupe.
 - Le SAS n'est pas un secret partagé : c'est un contrôle d'intégrité de l'échange, à comparer de visu.
 - Aucune persistance des clés : chaque transfert utilise un échange éphémère.
+
+## Relais de session (2026-11)
+
+- Le relais ne termine jamais le chiffrement : trames AEAD opaques, aucune clé, aucun nom.
+- Code de session : 8 caractères, ~40 bits, émis par le serveur, TTL 5 min, plafond 1 h.
+- Index serveur par hash BLAKE3 : ce n'est **pas** un secret (40 bits se cassent hors ligne).
+  La protection est la limite de 5 essais/min par /64 IPv6 et /32 IPv4, plus un budget global.
+- Token de session 256 bits, propriétaire comme invité : reprise après coupure sans dépendre du
+  `device_id` (public via mDNS).
+- `X-Forwarded-For` n'est lu que derrière un proxy de confiance, de droite à gauche ; Caddy
+  réécrit l'en-tête.
+- SAS à 6 chiffres affiché des deux côtés avant acceptation : un relais MITM le fait diverger.

@@ -1,3 +1,4 @@
+use droplink_core::protocol::PROTOCOL_VERSION;
 use droplink_core::relay::{encode_binary, ClientMsg, ServerMsg};
 use droplink_relay::room::Rooms;
 use droplink_relay::server::{serve, AppState};
@@ -31,54 +32,75 @@ async fn send_json(ws: &mut Ws, message: &ClientMsg) {
     ws.send(Message::Text(json.into())).await.unwrap();
 }
 
-async fn register(ws: &mut Ws, id: &str, alias: &str) -> String {
+async fn create_session(ws: &mut Ws, id: &str, alias: &str) -> (String, String) {
     send_json(
         ws,
-        &ClientMsg::Register {
+        &ClientMsg::CreateSession {
+            proto: PROTOCOL_VERSION,
             device_id: id.to_string(),
             alias: alias.to_string(),
-            room: Some("test-room".to_string()),
         },
     )
     .await;
     loop {
         match next_json(ws).await {
-            ServerMsg::Registered { peer_id } => return peer_id,
+            ServerMsg::SessionCreated { code, token, .. } => return (code, token),
             ServerMsg::RoomUpdate { .. } => continue,
-            other => panic!("expected registered, got {other:?}"),
+            other => panic!("expected session created, got {other:?}"),
         }
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn relay_pairs_and_forwards() {
+async fn start() -> (u16, tokio::task::JoinHandle<std::io::Result<()>>) {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let state: AppState = Arc::new(Mutex::new(Rooms::new()));
     let server = tokio::spawn(serve(listener, state, std::future::pending()));
+    (port, server)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn relay_pairs_and_forwards() {
+    let (port, server) = start().await;
 
     let url = format!("ws://127.0.0.1:{port}/ws");
     let (mut a, _) = connect_async(url.clone()).await.unwrap();
     let (mut b, _) = connect_async(url).await.unwrap();
 
-    let id_a = register(&mut a, "11111111-1111-4111-8111-111111111111", "A").await;
-    let id_b = register(&mut b, "22222222-2222-4222-8222-222222222222", "B").await;
+    let (code, _token) = create_session(&mut a, "11111111-1111-4111-8111-111111111111", "A").await;
+    send_json(
+        &mut b,
+        &ClientMsg::JoinSession {
+            proto: PROTOCOL_VERSION,
+            device_id: "22222222-2222-4222-8222-222222222222".into(),
+            alias: "B".into(),
+            code,
+        },
+    )
+    .await;
 
-    // A gets a room update containing B.
-    let update = next_json(&mut a).await;
-    let peer_b = match update {
-        ServerMsg::RoomUpdate { peers } => peers
-            .into_iter()
-            .find(|peer| peer.peer_id == id_b)
-            .expect("B missing from room update"),
+    loop {
+        match next_json(&mut b).await {
+            ServerMsg::SessionJoined { .. } => break,
+            ServerMsg::RoomUpdate { .. } => continue,
+            other => panic!("expected session joined, got {other:?}"),
+        }
+    }
+
+    let update = match next_json(&mut a).await {
+        ServerMsg::RoomUpdate { peers } => peers,
         other => panic!("expected room update, got {other:?}"),
     };
-    assert_eq!(peer_b.alias, "B");
+    let peer_b = update
+        .first()
+        .expect("B missing from room update")
+        .peer_id
+        .clone();
 
     send_json(
         &mut a,
         &ClientMsg::Connect {
-            peer_id: id_b.clone(),
+            peer_id: peer_b.clone(),
         },
     )
     .await;
@@ -123,43 +145,103 @@ async fn relay_pairs_and_forwards() {
     .expect("timeout");
     assert_eq!(received.as_ref(), frame.as_slice());
 
-    assert_eq!(id_a.len(), 36);
     drop(b);
 
-    let closed = next_json(&mut a).await;
-    match closed {
-        ServerMsg::CircuitClosed { circuit_id, .. } => assert_eq!(circuit_id, circuit),
-        other => panic!("expected circuit closed, got {other:?}"),
+    let closed = loop {
+        match next_json(&mut a).await {
+            ServerMsg::CircuitClosed { circuit_id, .. } => break circuit_id,
+            ServerMsg::RoomUpdate { .. } => continue,
+            other => panic!("expected circuit closed, got {other:?}"),
+        }
+    };
+    assert_eq!(closed, circuit);
+
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn relay_refuses_a_second_session_for_the_same_device() {
+    let (port, server) = start().await;
+
+    let url = format!("ws://127.0.0.1:{port}/ws");
+    let (mut a, _) = connect_async(url.clone()).await.unwrap();
+    let (mut b, _) = connect_async(url).await.unwrap();
+
+    let _ = create_session(&mut a, "11111111-1111-4111-8111-111111111111", "A").await;
+    send_json(
+        &mut b,
+        &ClientMsg::CreateSession {
+            proto: PROTOCOL_VERSION,
+            device_id: "11111111-1111-4111-8111-111111111111".into(),
+            alias: "B".into(),
+        },
+    )
+    .await;
+    match next_json(&mut b).await {
+        ServerMsg::Error { code, .. } => assert_eq!(code, "already_active"),
+        other => panic!("expected error, got {other:?}"),
     }
 
     server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn relay_rejects_duplicate_device_id() {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let state: AppState = Arc::new(Mutex::new(Rooms::new()));
-    let server = tokio::spawn(serve(listener, state, std::future::pending()));
-
+async fn relay_rate_limits_session_attempts_per_network() {
+    let (port, server) = start().await;
     let url = format!("ws://127.0.0.1:{port}/ws");
-    let (mut a, _) = connect_async(url.clone()).await.unwrap();
-    let (mut b, _) = connect_async(url).await.unwrap();
 
-    let _ = register(&mut a, "11111111-1111-4111-8111-111111111111", "A").await;
+    let mut last_code = String::new();
+    for index in 0..6 {
+        let (mut ws, _) = connect_async(url.clone()).await.unwrap();
+        send_json(
+            &mut ws,
+            &ClientMsg::CreateSession {
+                proto: PROTOCOL_VERSION,
+                device_id: format!("aaaaaaaa-1111-4111-8111-{index:012}"),
+                alias: format!("P{index}"),
+            },
+        )
+        .await;
+        loop {
+            match next_json(&mut ws).await {
+                ServerMsg::RoomUpdate { .. } => continue,
+                ServerMsg::SessionCreated { .. } => {
+                    assert!(index < 5, "attempt {index} should have been limited");
+                    last_code = "ok".into();
+                    break;
+                }
+                ServerMsg::Error { code, .. } => {
+                    assert_eq!(code, "rate_limited");
+                    assert_eq!(index, 5);
+                    break;
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+    }
+    assert_eq!(last_code, "ok");
+
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unknown_code_is_refused_without_enumeration() {
+    let (port, server) = start().await;
+    let url = format!("ws://127.0.0.1:{port}/ws");
+    let (mut ws, _) = connect_async(url).await.unwrap();
     send_json(
-        &mut b,
-        &ClientMsg::Register {
-            device_id: "11111111-1111-4111-8111-111111111111".into(),
+        &mut ws,
+        &ClientMsg::JoinSession {
+            proto: PROTOCOL_VERSION,
+            device_id: "bbbbbbbb-1111-4111-8111-111111111111".into(),
             alias: "B".into(),
-            room: Some("test-room".into()),
+            code: "ZZZZ2345".into(),
         },
     )
     .await;
-    match next_json(&mut b).await {
-        ServerMsg::Error { code, .. } => assert_eq!(code, "duplicate_id"),
+    match next_json(&mut ws).await {
+        ServerMsg::Error { code, .. } => assert_eq!(code, "no_session"),
         other => panic!("expected error, got {other:?}"),
     }
-
     server.abort();
 }

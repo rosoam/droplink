@@ -45,9 +45,7 @@ impl App {
         engine_cfg.port_pref = config.port_pref;
         engine_cfg.max_parallel = config.max_parallel;
         engine_cfg.accept_timeout = Duration::from_secs(config.accept_timeout_secs);
-        engine_cfg.relay_enabled = config.relay_enabled;
         engine_cfg.relay_url = config.relay_url.clone();
-        engine_cfg.room_code = config.room_code.clone();
 
         let (handle, bound, events) = rt.block_on(async { spawn(engine_cfg) })?;
 
@@ -144,7 +142,7 @@ impl App {
             port = bound.port,
             receive_dir = %config.receive_dir.display(),
             discovery = discovery.is_some(),
-            relay = config.relay_enabled,
+            relay_on_demand = config.relay_url.is_some(),
             "droplink started"
         );
 
@@ -189,6 +187,10 @@ impl App {
             UiAction::Cancel { transfer_id } => {
                 self.handle.command(Command::Cancel { transfer_id })
             }
+            UiAction::SessionCreate => self.handle.command(Command::SessionCreate),
+            UiAction::SessionJoin { code } => self.handle.command(Command::SessionJoin { code }),
+            UiAction::SessionRefresh => self.handle.command(Command::SessionRefresh),
+            UiAction::SessionEnd => self.handle.command(Command::SessionEnd),
             UiAction::Open { path } => {
                 tracing::info!(path = %path.display(), "open requested");
                 if path.exists() {

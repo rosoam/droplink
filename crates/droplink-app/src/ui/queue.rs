@@ -64,6 +64,18 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
                 .color(theme::MUTED),
             );
         });
+        if row.direction == droplink_core::protocol::Direction::Send {
+            if let Some(code) = state.sas.get(&row.transfer_id) {
+                ui.horizontal(|ui| {
+                    ui.label(theme::mono("sas", 9.0).color(theme::MUTED));
+                    ui.label(theme::mono(crate::ui::sas_spaced(code), 11.0).color(theme::ACCENT));
+                    ui.label(
+                        theme::mono("compare ce code avec le destinataire", 9.0)
+                            .color(theme::MUTED),
+                    );
+                });
+            }
+        }
         ui.add_space(4.0);
     }
 

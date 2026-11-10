@@ -230,3 +230,11 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 ---
 
 **Statut de release :** MVP stable — cœur fonctionnel (découverte + transfert + UI) prêt production. À auditer avant usage multi-utilisateurs.
+
+## 2026-11-10 — Sessions distantes
+
+- Codes de session éphémères (8 caractères, TTL 5 min, rotation, plafond 1 h).
+- Tokens propriétaire et invité ; reprise après coupure, `device_id` public sans pouvoir destructeur.
+- Relais à la demande, contre-pression réelle sur le payload, limite par /64 IPv6.
+- UI `à distance`, SAS côté émetteur, partage du code sur iOS.
+- Déploiement `deploy/` (systemd + Caddy WSS).

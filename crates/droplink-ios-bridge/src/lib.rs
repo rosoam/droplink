@@ -60,6 +60,14 @@ mod imp {
         unsafe { droplink_ios_open_files() }
     }
 
+    /// Present the system share sheet with a short text (the session code).
+    pub fn share_text(text: &str) {
+        let Ok(text) = CString::new(text) else {
+            return;
+        };
+        unsafe { droplink_ios_share(text.as_ptr()) }
+    }
+
     pub fn export_received(path: &std::path::Path) {
         let Ok(path) = CString::new(path.to_string_lossy().as_bytes()) else {
             return;
@@ -100,6 +108,7 @@ mod imp {
         fn droplink_ios_pick_folder();
         fn droplink_ios_open_files();
         fn droplink_ios_export(path: *const c_char);
+        fn droplink_ios_share(text: *const c_char);
     }
 
     pub fn start_bonjour(port: u16, device_id: &str, alias: &str, ip: &str) {

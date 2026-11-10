@@ -29,9 +29,7 @@ pub struct EngineConfig {
     pub accept_timeout: Duration,
     pub handshake_timeout: Duration,
     pub progress_interval: Duration,
-    pub relay_enabled: bool,
     pub relay_url: Option<String>,
-    pub room_code: Option<String>,
 }
 
 impl EngineConfig {
@@ -45,9 +43,7 @@ impl EngineConfig {
             accept_timeout: Duration::from_secs(60),
             handshake_timeout: Duration::from_secs(5),
             progress_interval: Duration::from_millis(100),
-            relay_enabled: false,
             relay_url: Some(DEFAULT_RELAY_URL.to_string()),
-            room_code: None,
         }
     }
 }
@@ -78,6 +74,15 @@ pub enum Command {
         key: PeerKey,
         source: Source,
     },
+    SessionCreate,
+    SessionJoin {
+        code: String,
+    },
+    SessionResume {
+        token: String,
+    },
+    SessionRefresh,
+    SessionEnd,
     Shutdown,
 }
 
@@ -128,6 +133,25 @@ pub enum Event {
         file_name: String,
         reason: String,
         transport: TransportMode,
+    },
+    Session {
+        code: String,
+        token: Option<String>,
+        expires_at: u64,
+        ttl_secs: u64,
+        owner: bool,
+    },
+    SessionRefreshed {
+        code: String,
+        expires_at: u64,
+        ttl_secs: u64,
+    },
+    SessionEnded {
+        reason: String,
+    },
+    SessionError {
+        code: String,
+        message: String,
     },
 }
 
@@ -182,6 +206,18 @@ pub(crate) struct EngineState {
     shutdown: CancellationToken,
     relay: Mutex<Option<Arc<RelayClient>>>,
     relay_peers: Mutex<HashSet<String>>,
+    session: Mutex<SessionState>,
+    reconnecting: std::sync::atomic::AtomicBool,
+}
+
+#[derive(Clone, Default)]
+struct SessionState {
+    token: Option<String>,
+    code: Option<String>,
+    owner: bool,
+    active: bool,
+    expires_at: Option<u64>,
+    ttl_secs: Option<u64>,
 }
 
 impl EngineState {
@@ -331,6 +367,55 @@ impl EngineState {
             .map(|ids| ids.clone())
             .unwrap_or_default()
     }
+
+    fn session_snapshot(&self) -> SessionState {
+        self.session
+            .lock()
+            .map(|state| state.clone())
+            .unwrap_or_default()
+    }
+
+    fn session_update(&self, change: impl FnOnce(&mut SessionState)) {
+        if let Ok(mut state) = self.session.lock() {
+            change(&mut state);
+        }
+    }
+
+    fn session_active(&self) -> bool {
+        self.session
+            .lock()
+            .map(|state| state.active)
+            .unwrap_or(false)
+    }
+
+    fn session_reset(&self) {
+        if let Ok(mut state) = self.session.lock() {
+            *state = SessionState::default();
+        }
+    }
+
+    fn emit_session(&self) {
+        let snapshot = self.session_snapshot();
+        if let Some(code) = snapshot.code {
+            self.emit(Event::Session {
+                code,
+                token: snapshot.token,
+                expires_at: self
+                    .session
+                    .lock()
+                    .ok()
+                    .and_then(|state| state.expires_at)
+                    .unwrap_or(0),
+                ttl_secs: self
+                    .session
+                    .lock()
+                    .ok()
+                    .and_then(|state| state.ttl_secs)
+                    .unwrap_or(droplink_core::relay::SESSION_TTL_SECS),
+                owner: snapshot.owner,
+            });
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -382,11 +467,9 @@ pub fn spawn(cfg: EngineConfig) -> Result<(EngineHandle, Bound, mpsc::Receiver<E
         shutdown: CancellationToken::new(),
         relay: Mutex::new(None),
         relay_peers: Mutex::new(HashSet::new()),
+        session: Mutex::new(SessionState::default()),
+        reconnecting: std::sync::atomic::AtomicBool::new(false),
     });
-
-    if state.cfg.relay_enabled {
-        start_relay(state.clone());
-    }
 
     let _task = tokio::spawn(accept_loop(state.clone(), listener));
     let _task = tokio::spawn(command_loop(state.clone(), command_rx));
@@ -486,6 +569,98 @@ async fn command_loop(state: Arc<EngineState>, mut commands: mpsc::Receiver<Comm
             Command::Cancel { transfer_id } => state.cancel(&transfer_id),
             Command::PeerSeen { peer, source } => state.peer_seen(peer, source),
             Command::PeerGone { key, source } => state.peer_gone(key, source),
+            Command::SessionCreate => {
+                if !ensure_relay(&state).await {
+                    continue;
+                }
+                state.session_update(|session| {
+                    session.owner = true;
+                    session.active = false;
+                });
+                if let Some(client) = state.relay() {
+                    if let Err(err) = client
+                        .create_session(&state.cfg.device_id, &state.cfg.device_name)
+                        .await
+                    {
+                        state.emit(Event::SessionError {
+                            code: "relay".into(),
+                            message: err.to_string(),
+                        });
+                    }
+                }
+            }
+            Command::SessionJoin { code } => {
+                if !ensure_relay(&state).await {
+                    continue;
+                }
+                state.session_update(|session| {
+                    session.owner = false;
+                    session.code = Some(code.clone());
+                    session.active = false;
+                });
+                if let Some(client) = state.relay() {
+                    if let Err(err) = client
+                        .join_session(&state.cfg.device_id, &state.cfg.device_name, &code)
+                        .await
+                    {
+                        state.emit(Event::SessionError {
+                            code: "relay".into(),
+                            message: err.to_string(),
+                        });
+                    }
+                }
+            }
+            Command::SessionResume { token } => {
+                if !ensure_relay(&state).await {
+                    continue;
+                }
+                state.session_update(|session| {
+                    session.token = Some(token.clone());
+                    session.owner = true;
+                    session.active = false;
+                });
+                if let Some(client) = state.relay() {
+                    if let Err(err) = client.resume_session(&token).await {
+                        state.emit(Event::SessionError {
+                            code: "relay".into(),
+                            message: err.to_string(),
+                        });
+                    }
+                }
+            }
+            Command::SessionRefresh => {
+                let token = state.session_snapshot().token;
+                let Some(token) = token else {
+                    state.emit(Event::SessionError {
+                        code: "no_session".into(),
+                        message: "aucune session à renouveler".into(),
+                    });
+                    continue;
+                };
+                if let Some(client) = state.relay() {
+                    if let Err(err) = client.refresh_session(&token).await {
+                        state.emit(Event::SessionError {
+                            code: "relay".into(),
+                            message: err.to_string(),
+                        });
+                    }
+                }
+            }
+            Command::SessionEnd => {
+                if let Some(client) = state.relay() {
+                    let _ = client.leave_session().await;
+                }
+                state.session_reset();
+                state.set_relay(None);
+                let ids = state.relay_peer_ids();
+                state.clear_relay_peers();
+                for id in ids {
+                    state.peer_gone(PeerKey::Relay(id), Source::Relay);
+                }
+                state.emit(Event::SessionEnded {
+                    reason: "closed".into(),
+                });
+            }
             Command::Shutdown => {
                 state.shutdown.cancel();
                 break;
@@ -582,85 +757,197 @@ async fn pick_transport(state: &EngineState, peer: &Peer) -> Result<TransportCho
     Err(Error::Protocol("peer unreachable".into()))
 }
 
-fn start_relay(state: Arc<EngineState>) {
+/// Connect the relay on demand. Called by session commands and by reconnection.
+async fn ensure_relay(state: &Arc<EngineState>) -> bool {
+    if state.relay().is_some() {
+        return true;
+    }
     let Some(url) = state.cfg.relay_url.clone() else {
-        return;
+        state.emit(Event::SessionError {
+            code: "no_relay".into(),
+            message: "aucun relais configuré".into(),
+        });
+        return false;
     };
-    let device_id = state.cfg.device_id.clone();
-    let alias = state.cfg.device_name.clone();
-    let room = state.cfg.room_code.clone();
+    let (events_tx, events_rx) = mpsc::channel(64);
+    match RelayClient::connect(&url, events_tx).await {
+        Ok(client) => {
+            let client = Arc::new(client);
+            state.set_relay(Some(client.clone()));
+            tokio::spawn(relay_events(state.clone(), client, events_rx));
+            true
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "relay unavailable");
+            state.emit(Event::SessionError {
+                code: "relay_unreachable".into(),
+                message: err.to_string(),
+            });
+            false
+        }
+    }
+}
 
-    let _task = tokio::spawn(async move {
-        let mut backoff = Duration::from_secs(1);
-        loop {
-            if state.is_cancelled() {
+async fn relay_events(
+    state: Arc<EngineState>,
+    client: Arc<RelayClient>,
+    mut events: mpsc::Receiver<RelayEvent>,
+) {
+    while let Some(event) = events.recv().await {
+        match event {
+            RelayEvent::Created {
+                code,
+                token,
+                expires_at,
+                ttl_secs,
+            } => {
+                state.session_update(|session| {
+                    session.code = Some(code);
+                    session.token = Some(token);
+                    session.owner = true;
+                    session.active = true;
+                    session.expires_at = Some(expires_at);
+                    session.ttl_secs = Some(ttl_secs);
+                });
+                state.emit_session();
+            }
+            RelayEvent::Joined {
+                expires_at,
+                ttl_secs,
+                token,
+                ..
+            } => {
+                state.session_update(|session| {
+                    session.active = true;
+                    session.token = Some(token);
+                    session.expires_at = Some(expires_at);
+                    session.ttl_secs = Some(ttl_secs);
+                });
+                state.emit_session();
+            }
+            RelayEvent::Resumed {
+                code,
+                expires_at,
+                ttl_secs,
+                ..
+            } => {
+                state.session_update(|session| {
+                    session.code = Some(code);
+                    session.owner = true;
+                    session.active = true;
+                    session.expires_at = Some(expires_at);
+                    session.ttl_secs = Some(ttl_secs);
+                });
+                state.emit_session();
+            }
+            RelayEvent::Refreshed {
+                code,
+                expires_at,
+                ttl_secs,
+            } => {
+                state.session_update(|session| {
+                    session.code = Some(code.clone());
+                    session.expires_at = Some(expires_at);
+                    session.ttl_secs = Some(ttl_secs);
+                });
+                state.emit(Event::SessionRefreshed {
+                    code,
+                    expires_at,
+                    ttl_secs,
+                });
+            }
+            RelayEvent::SessionEnded { reason } => {
+                state.session_reset();
+                state.set_relay(None);
+                let ids = state.relay_peer_ids();
+                state.clear_relay_peers();
+                for id in ids {
+                    state.peer_gone(PeerKey::Relay(id), Source::Relay);
+                }
+                state.emit(Event::SessionEnded { reason });
                 break;
             }
-            let (events_tx, mut events_rx) = mpsc::channel(64);
-            match RelayClient::connect(&url, &device_id, &alias, room.as_deref(), events_tx).await {
-                Ok(client) => {
-                    backoff = Duration::from_secs(1);
-                    let client = Arc::new(client);
-                    state.set_relay(Some(client.clone()));
-                    while let Some(event) = events_rx.recv().await {
-                        match event {
-                            RelayEvent::Peers(peers) => {
-                                let new_ids: HashSet<String> =
-                                    peers.iter().map(|peer| peer.peer_id.clone()).collect();
-                                let old_ids = state.replace_relay_peers(new_ids.clone());
-                                for peer in peers {
-                                    state.peer_seen(
-                                        Peer {
-                                            device_id: None,
-                                            alias: peer.alias,
-                                            reach: Reach::Relay {
-                                                peer_id: peer.peer_id,
-                                            },
-                                        },
-                                        Source::Relay,
-                                    );
-                                }
-                                for id in old_ids.difference(&new_ids) {
-                                    state.peer_gone(PeerKey::Relay(id.clone()), Source::Relay);
-                                }
-                            }
-                            RelayEvent::Incoming { circuit_id } => {
-                                if let Some(stream) = client.take_circuit(&circuit_id) {
-                                    let handle = state.clone();
-                                    let _t = tokio::spawn(async move {
-                                        if let Err(err) = receiver::handle_stream(
-                                            handle,
-                                            stream,
-                                            TransportMode::Relay,
-                                        )
-                                        .await
-                                        {
-                                            tracing::debug!(error = %err, "relay incoming ended");
-                                        }
-                                    });
-                                }
-                            }
-                            RelayEvent::Disconnected => {
-                                state.set_relay(None);
-                                let ids = state.relay_peer_ids();
-                                state.clear_relay_peers();
-                                for id in ids {
-                                    state.peer_gone(PeerKey::Relay(id), Source::Relay);
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    state.set_relay(None);
+            RelayEvent::Peers(peers) => {
+                let new_ids: HashSet<String> =
+                    peers.iter().map(|peer| peer.peer_id.clone()).collect();
+                let old_ids = state.replace_relay_peers(new_ids.clone());
+                for peer in peers {
+                    state.peer_seen(
+                        Peer {
+                            device_id: None,
+                            alias: peer.alias,
+                            reach: Reach::Relay {
+                                peer_id: peer.peer_id,
+                            },
+                        },
+                        Source::Relay,
+                    );
                 }
-                Err(err) => tracing::warn!(error = %err, "relay unavailable, will retry"),
+                for id in old_ids.difference(&new_ids) {
+                    state.peer_gone(PeerKey::Relay(id.clone()), Source::Relay);
+                }
             }
-            if state.is_cancelled() {
+            RelayEvent::Incoming { circuit_id } => {
+                if let Some(stream) = client.take_circuit(&circuit_id) {
+                    let handle = state.clone();
+                    let _t = tokio::spawn(async move {
+                        if let Err(err) =
+                            receiver::handle_stream(handle, stream, TransportMode::Relay).await
+                        {
+                            tracing::debug!(error = %err, "relay incoming ended");
+                        }
+                    });
+                }
+            }
+            RelayEvent::Error { code, message } => {
+                state.emit(Event::SessionError { code, message });
+            }
+            RelayEvent::Disconnected => {
+                state.set_relay(None);
+                let ids = state.relay_peer_ids();
+                state.clear_relay_peers();
+                for id in ids {
+                    state.peer_gone(PeerKey::Relay(id), Source::Relay);
+                }
+                if state.session_active() && !state.is_cancelled() {
+                    spawn_reconnect(state.clone());
+                }
+                break;
+            }
+        }
+    }
+}
+
+fn spawn_reconnect(state: Arc<EngineState>) {
+    use std::sync::atomic::Ordering;
+    if state.reconnecting.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tokio::spawn(async move {
+        let mut backoff = Duration::from_secs(1);
+        loop {
+            if state.is_cancelled() || !state.session_active() {
                 break;
             }
             tokio::time::sleep(backoff).await;
+            if ensure_relay(&state).await {
+                let snapshot = state.session_snapshot();
+                if let Some(client) = state.relay() {
+                    // Both the owner and a guest hold a reconnect token; `join` is only the
+                    // first contact. A guest without a token falls back to the code.
+                    if let Some(token) = snapshot.token {
+                        let _ = client.resume_session(&token).await;
+                    } else if let Some(code) = snapshot.code {
+                        let _ = client
+                            .join_session(&state.cfg.device_id, &state.cfg.device_name, &code)
+                            .await;
+                    }
+                }
+                break;
+            }
             backoff = (backoff * 2).min(Duration::from_secs(30));
         }
+        state.reconnecting.store(false, Ordering::SeqCst);
     });
 }
 

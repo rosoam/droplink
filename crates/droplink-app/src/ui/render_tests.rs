@@ -1,7 +1,7 @@
 //! Headless egui rendering tests: they drive every screen with a populated state. No window is
 //! opened: `egui::Context::run` executes the layout and widget code for real.
 
-use crate::state::{HistoryEntry, TransferRow, UiState};
+use crate::state::{HistoryEntry, SessionView, TransferRow, UiState};
 use crate::ui;
 use droplink_core::config::{generate_device_id, Config};
 use droplink_core::peer::{Peer, PeerKey, Reach};
@@ -214,4 +214,50 @@ fn formats_bytes_across_units() {
     assert_eq!(ui::sas_spaced("12"), "12");
     assert_eq!(ui::mode_label(TransportMode::Direct), "LAN");
     assert_eq!(ui::mode_label(TransportMode::Relay), "relay");
+}
+
+#[test]
+fn renders_the_remote_session_panel() {
+    let ctx = egui::Context::default();
+    crate::theme::apply(&ctx);
+
+    let mut owner = UiState::new(10);
+    owner.session = Some(SessionView {
+        code: "ABCD2345".into(),
+        token: Some("tok".into()),
+        expires_at: droplink_core::relay::now_secs() + 240,
+        ttl_secs: 300,
+        owner: true,
+        error: None,
+    });
+    let output = ctx.run(RawInput::default(), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let _ = ui::session::show(ui, &mut owner);
+        });
+    });
+    assert!(!output.shapes.is_empty());
+
+    let mut guest = UiState::new(10);
+    guest.session = Some(SessionView {
+        code: "ABCD2345".into(),
+        token: Some("guest".into()),
+        expires_at: droplink_core::relay::now_secs() + 30,
+        ttl_secs: 300,
+        owner: false,
+        error: Some("relais injoignable".into()),
+    });
+    let output = ctx.run(RawInput::default(), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let _ = ui::session::show(ui, &mut guest);
+        });
+    });
+    assert!(!output.shapes.is_empty());
+
+    let mut empty = UiState::new(10);
+    let output = ctx.run(RawInput::default(), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let _ = ui::session::show(ui, &mut empty);
+        });
+    });
+    assert!(!output.shapes.is_empty());
 }

@@ -1,0 +1,25 @@
+[Unit]
+Description=DropLink relay (opaque circuit forwarding)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=1G
+Environment=PORT=8080
+# Only Caddy runs on this host and overwrites X-Forwarded-For.
+Environment=TRUSTED_PROXY_CIDRS=127.0.0.1/32
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/droplink-relay
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

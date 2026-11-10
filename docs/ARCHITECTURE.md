@@ -131,3 +131,17 @@ publie par `hard_link` (atomique, n'écrase jamais) et supprime le `.part`. Un �
 | Progression agrégée | découple le débit réseau du renderer |
 | `hard_link` pour publier | publication atomique sans écrasement |
 | Zéro unsafe | `#![forbid(unsafe_code)]` sur tous les crates |
+
+## Sessions éphémères
+
+Une *room* n'est plus un identifiant public : le serveur crée une **session** (UUID aléatoire,
+jamais exposé) et émet un code 8 caractères + un token 256 bits.
+
+- L'hôte crée : `CreateSession { proto, device_id, alias }` → `SessionCreated { code, token, expires_at, ttl_secs }`.
+- L'invité rejoint : `JoinSession { code }` → `SessionJoined { peers, token }` (token invité).
+- Rotation : `RefreshSession { token }` → nouveau code, mêmes pairs, mêmes circuits.
+- Coupure : le propriétaire reprend avec `ResumeSession { token }` (nouveau code) ; l'invité avec
+  son token invité. Grâce de 2 min, plafond absolu 1 h.
+- Le relais démarre **à la demande**, à la première commande de session. Aucune socket sans
+  action utilisateur.
+- `pick_transport` garde l'ordre direct → relais.

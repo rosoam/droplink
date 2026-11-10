@@ -35,6 +35,12 @@ pub enum UiAction {
         peer: Peer,
         path: PathBuf,
     },
+    SessionCreate,
+    SessionJoin {
+        code: String,
+    },
+    SessionRefresh,
+    SessionEnd,
     Respond {
         transfer_id: TransferId,
         accept: bool,
@@ -95,6 +101,16 @@ impl Toast {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct SessionView {
+    pub code: String,
+    pub token: Option<String>,
+    pub expires_at: u64,
+    pub ttl_secs: u64,
+    pub owner: bool,
+    pub error: Option<String>,
+}
+
 #[derive(Default)]
 pub struct UiState {
     pub devices: Vec<Peer>,
@@ -115,6 +131,8 @@ pub struct UiState {
     /// Saisie de la connexion directe (`hôte` et `port`).
     pub direct_host: String,
     pub direct_port: String,
+    pub session: Option<SessionView>,
+    pub join_code: String,
 }
 
 impl UiState {
@@ -158,6 +176,59 @@ impl UiState {
 
     pub fn apply(&mut self, event: Event) {
         match event {
+            Event::Session {
+                code,
+                token,
+                expires_at,
+                ttl_secs,
+                owner,
+            } => {
+                self.session = Some(SessionView {
+                    code,
+                    token,
+                    expires_at,
+                    ttl_secs,
+                    owner,
+                    error: None,
+                });
+            }
+            Event::SessionRefreshed {
+                code,
+                expires_at,
+                ttl_secs,
+            } => {
+                if let Some(session) = self.session.as_mut() {
+                    session.code = code;
+                    session.expires_at = expires_at;
+                    session.ttl_secs = ttl_secs;
+                    session.error = None;
+                }
+            }
+            Event::SessionEnded { reason } => {
+                let text = match reason.as_str() {
+                    "closed" => "session terminée",
+                    "owner-left" => "l'hôte a quitté la session",
+                    "expired" => "session expirée",
+                    other => other,
+                };
+                self.toast = Some(Toast::success(text));
+                self.session = None;
+                self.devices.retain(|peer| peer.reach.relay_id().is_none());
+                self.selected = None;
+            }
+            Event::SessionError { code, message } => {
+                let text = match code.as_str() {
+                    "no_session" => "code inconnu ou expiré".to_string(),
+                    "already_active" => "une session est déjà active sur cet appareil".to_string(),
+                    "rate_limited" => "trop de tentatives, réessaie dans une minute".to_string(),
+                    "relay_unreachable" | "no_relay" => "relais injoignable".to_string(),
+                    _ => message,
+                };
+                match self.session.as_mut() {
+                    Some(session) => session.error = Some(text),
+                    None => self.toast = Some(Toast::error(text)),
+                }
+            }
             Event::DevicesChanged(peers) => {
                 self.devices = peers;
                 if let Some(key) = &self.selected {

@@ -85,3 +85,15 @@ locale. Chaque ligne indique la mitigation implémentée et le test qui la couvr
 - Analyse antivirus des fichiers reçus.
 - Reprise après interruption et chiffrement au repos.
 - Distribution signée / notarisation.
+
+## Sessions distantes (relais)
+
+| Menace | Contre-mesure | Test |
+|---|---|---|
+| Énumération de codes | 40 bits + 5/min par /64 + budget global + échec uniforme | `ws_relay.rs`, `limit.rs` |
+| Force brute distribuée IPv6 | agrégation /64 | `ipv6_is_grouped_by_64` |
+| Usurpation d'IP via XFF | en-têtes ignorés hors proxy de confiance, lecture de droite à gauche | `forwarded_header_*` |
+| Kill d'un transfert via `device_id` public | session possédée par token, `already_active` refuse la nouvelle | `duplicate_device_id_never_kills_*` |
+| DoS mémoire par récepteur lent | contre-pression `send().await`, file de 4 trames, `MemoryMax=1G` | `slow_reader_route_exposes_backpressure` |
+| MITM du relais | AEAD + SAS comparé des deux côtés | `crypto.rs` |
+| Code partagé par messagerie | fuite tierce assumée, TTL 5 min | documentation |

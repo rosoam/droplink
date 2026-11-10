@@ -213,15 +213,20 @@ Détails et commandes : [`docs/PERF.md`](docs/PERF.md).
 
 ---
 
-## Relay (cross-réseau)
+## Envoi à distance (relais)
 
-Le relay est **désactivé par défaut**. Pour l'utiliser :
+Deux appareils sur deux réseaux, sans compte :
 
-1. déployer `crates/droplink-relay` (Dockerfile + `fly.toml` fournis) ;
-2. dans `cfg`, activer le relay et renseigner l'URL (`wss://.../ws`) ;
-3. optionnel : définir un `room_code` pour isoler un groupe.
+1. `à distance → créer un code` : le serveur émet un code 8 caractères (`ABCD-2345`), valable
+   5 minutes, renouvelable.
+2. L'autre appareil saisit le code (`rejoindre`).
+3. Le fichier part par le relais ; le destinataire compare le SAS à 6 chiffres avant d'accepter.
 
-Le serveur ne déchiffre rien : il relaie des frames binaires `[circuit_id 16 octets || ciphertext]`.
+Le relais ne déchiffre rien : il relaie des trames `[circuit_id 16 octets || ciphertext]`. Il ne
+voit ni nom de fichier ni contenu. Le direct reste prioritaire quand les deux appareils sont sur
+le même réseau.
+
+Déploiement : voir `deploy/README.md` (systemd + Caddy WSS). Détails : `docs/REMOTE.md`.
 
 ---
 
