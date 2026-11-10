@@ -29,7 +29,7 @@ systemctl reload caddy
 
 ```bash
 curl -fsS https://relay.droplink.app/healthz
-# {"status":"ok","sessions":0,"peers":0,"circuits":0}
+# {"status":"ok","sessions":0,"peers":0,"circuits":0,"join_failures":0,"bytes_relayed":0}
 journalctl -u droplink-relay -f
 ```
 

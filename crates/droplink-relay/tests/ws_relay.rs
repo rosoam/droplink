@@ -245,3 +245,42 @@ async fn unknown_code_is_refused_without_enumeration() {
     }
     server.abort();
 }
+
+/// One hundred join attempts from the same network. The per-/64 budget is 5: exactly five
+/// reach the session lookup, the rest are rate-limited. This exercises the full socket path,
+/// not only the limiter struct.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_hundred_join_attempts_are_rate_limited() {
+    let (port, server) = start().await;
+    let url = format!("ws://127.0.0.1:{port}/ws");
+
+    let mut no_session = 0;
+    let mut rate_limited = 0;
+    for index in 0..100 {
+        let (mut ws, _) = connect_async(url.clone()).await.unwrap();
+        send_json(
+            &mut ws,
+            &ClientMsg::JoinSession {
+                proto: PROTOCOL_VERSION,
+                device_id: format!("cccccccc-1111-4111-8111-{index:012}"),
+                alias: format!("P{index}"),
+                code: "ZZZZ2345".into(),
+            },
+        )
+        .await;
+        match next_json(&mut ws).await {
+            ServerMsg::Error { code, .. } if code == "no_session" => no_session += 1,
+            ServerMsg::Error { code, .. } if code == "rate_limited" => rate_limited += 1,
+            other => panic!("unexpected {other:?}"),
+        }
+        drop(ws);
+        // Let the server close the socket so the per-IP socket cap does not interfere.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        no_session, 5,
+        "exactly the burst reaches the session lookup"
+    );
+    assert_eq!(rate_limited, 95);
+    server.abort();
+}

@@ -89,11 +89,26 @@ pub struct Rooms {
     sockets: usize,
     per_ip: HashMap<IpAddr, usize>,
     limiter: SessionLimiter,
+    join_failures: u64,
+    relayed_bytes: u64,
 }
 
 impl Rooms {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Count a refused or unknown join. Exposed in `/healthz`, never with the code.
+    pub fn note_join_failure(&mut self) {
+        self.join_failures = self.join_failures.saturating_add(1);
+    }
+
+    pub fn join_failures(&self) -> u64 {
+        self.join_failures
+    }
+
+    pub fn relayed_bytes(&self) -> u64 {
+        self.relayed_bytes
     }
 
     /// Reserve one session attempt for this address (see `limit.rs`).
@@ -211,6 +226,7 @@ impl Rooms {
         self.session_of_peer
             .insert(peer.clone(), session_id.clone());
         self.sessions.insert(session_id.clone(), session);
+        tracing::debug!(sessions = self.sessions.len(), "session created");
         Ok((peer, session_id, expires_at))
     }
 
@@ -615,8 +631,8 @@ impl Rooms {
     /// The caller must `send().await` **outside** the lock: a slow reader then slows the
     /// sender's TCP stream instead of losing the transfer.
     pub fn prepare_route(&mut self, from: &str, frame: &[u8]) -> Result<Route, RelayError> {
-        let (circuit_id, _payload) =
-            decode_binary(frame).map_err(|_| RelayError::UnknownCircuit)?;
+        let (circuit_id, payload) = decode_binary(frame).map_err(|_| RelayError::UnknownCircuit)?;
+        self.relayed_bytes = self.relayed_bytes.saturating_add(payload.len() as u64);
         let circuit = self
             .circuits
             .get(&circuit_id)
@@ -1141,6 +1157,29 @@ mod tests {
             rooms.prepare_route(&a.node.peer, &frame).unwrap_err(),
             RelayError::UnknownCircuit
         );
+    }
+
+    #[test]
+    fn health_counters_track_failures_and_relayed_bytes() {
+        let mut rooms = Rooms::new();
+        assert_eq!(rooms.join_failures(), 0);
+        assert_eq!(rooms.relayed_bytes(), 0);
+        rooms.note_join_failure();
+        rooms.note_join_failure();
+        assert_eq!(rooms.join_failures(), 2);
+    }
+
+    #[tokio::test]
+    async fn relayed_bytes_count_the_opaque_payload_only() {
+        let mut rooms = Rooms::new();
+        let a = create(&mut rooms, "A", 1_000);
+        let b = join(&mut rooms, &a.code, "B", 1_001);
+        let circuit = rooms.connect(&a.node.peer, &b.peer).unwrap();
+        let payload = b"1234567890";
+        let frame = encode_binary(&circuit, payload).unwrap();
+        let route = rooms.prepare_route(&a.node.peer, &frame).unwrap();
+        route.tx.try_send(Outbound::Binary(frame)).unwrap();
+        assert_eq!(rooms.relayed_bytes(), payload.len() as u64);
     }
 
     #[tokio::test]

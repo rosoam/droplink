@@ -37,6 +37,8 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
         "sessions": rooms.session_count(),
         "peers": rooms.peer_count(),
         "circuits": rooms.total_circuits(),
+        "join_failures": rooms.join_failures(),
+        "bytes_relayed": rooms.relayed_bytes(),
     }))
 }
 
@@ -367,10 +369,12 @@ fn handle_text(
                 return;
             }
             if !lock(state).allow_session_attempt(ip) {
+                lock(state).note_join_failure();
                 send_error(tx, "rate_limited", "too many session attempts");
                 return;
             }
             let Some(code) = normalize_code(&code) else {
+                lock(state).note_join_failure();
                 send_error(tx, "no_session", "unknown or expired session");
                 return;
             };
@@ -395,7 +399,10 @@ fn handle_text(
                         token: guest_token,
                     }));
                 }
-                Err(err) => send_error(tx, relay_error_code(&err), &err.to_string()),
+                Err(err) => {
+                    rooms.note_join_failure();
+                    send_error(tx, relay_error_code(&err), &err.to_string());
+                }
             }
         }
         ClientMsg::ResumeSession { token } => {

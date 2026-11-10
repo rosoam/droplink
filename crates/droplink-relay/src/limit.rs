@@ -171,6 +171,19 @@ mod tests {
     }
 
     #[test]
+    fn one_hundred_attempts_from_one_64_allow_only_the_burst() {
+        let mut limiter = SessionLimiter::new();
+        let ip: IpAddr = "2001:db8:1:2::abcd".parse().unwrap();
+        let allowed = (0..100).filter(|_| limiter.allow(ip)).count();
+        assert_eq!(
+            allowed as u32, SESSION_JOIN_BURST,
+            "a /64 must not get more than the burst"
+        );
+        // The global budget may also be exhausted by a 100-attempt burst; that is by design.
+        // Per-network isolation without a flood is covered by `another_network_is_unaffected`.
+    }
+
+    #[test]
     fn net_key_normalises_prefixes() {
         let a: IpAddr = "2001:db8:1:2::1".parse().unwrap();
         let b: IpAddr = "2001:db8:1:2::2".parse().unwrap();
