@@ -199,6 +199,8 @@ pub fn parse_peer_txt(
     let alias: String = alias
         .unwrap_or("Appareil")
         .trim()
+        .trim_end_matches(".local")
+        .trim_end_matches(".local.")
         .chars()
         .filter(|c| !c.is_control())
         .take(64)

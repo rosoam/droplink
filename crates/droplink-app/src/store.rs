@@ -45,7 +45,11 @@ fn ios_home() -> PathBuf {
 fn default_config() -> Config {
     #[cfg(not(target_os = "ios"))]
     let name = hostname::get()
-        .map(|name| name.to_string_lossy().to_string())
+        .map(|name| {
+            name.to_string_lossy()
+                .trim_end_matches(".local")
+                .to_string()
+        })
         .unwrap_or_else(|_| "DropLink".to_string());
     #[cfg(target_os = "ios")]
     let name = "iPhone".to_string();
@@ -102,6 +106,7 @@ pub fn load_history(paths: &Paths) -> Vec<crate::state::HistoryEntry> {
     std::fs::read_to_string(paths.history_file())
         .ok()
         .and_then(|raw| serde_json::from_str::<Vec<crate::state::HistoryEntry>>(&raw).ok())
+        .map(|entries| entries.into_iter().filter(|entry| entry.ok).collect())
         .unwrap_or_default()
 }
 

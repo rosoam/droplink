@@ -1,4 +1,4 @@
-use eframe::egui::{self, RichText};
+use eframe::egui;
 
 use crate::state::{UiAction, UiState};
 use crate::theme;
@@ -11,40 +11,64 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
     }
 
     for row in &state.queue {
+        let fraction = if row.total > 0 {
+            (row.bytes as f32 / row.total as f32).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let elapsed = row.started.elapsed().as_secs_f32().max(0.001);
+        let speed = row.bytes as f32 / elapsed;
+
         ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(&row.file_name).strong());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("✕").on_hover_text("Annuler").clicked() {
-                            actions.push(UiAction::Cancel {
-                                transfer_id: row.transfer_id.clone(),
-                            });
-                        }
-                    });
-                });
-                let fraction = if row.total > 0 {
-                    (row.bytes as f32 / row.total as f32).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                ui.add(egui::ProgressBar::new(fraction).show_percentage());
-                let elapsed = row.started.elapsed().as_secs_f32().max(0.001);
-                let speed = row.bytes as f32 / elapsed;
-                ui.label(
-                    RichText::new(format!(
-                        "{} / {} · {}/s · {}",
+            ui.label(
+                theme::mono(
+                    if row.direction == droplink_core::protocol::Direction::Send {
+                        "^"
+                    } else {
+                        "v"
+                    },
+                    12.0,
+                )
+                .color(theme::ACCENT),
+            );
+            ui.label(theme::mono(&row.file_name, 12.0));
+            let width = ui.available_width();
+            ui.allocate_ui_with_layout(
+                egui::Vec2::new(width, 16.0),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    if theme::muted_button(ui, "x")
+                        .on_hover_text("annuler")
+                        .clicked()
+                    {
+                        actions.push(UiAction::Cancel {
+                            transfer_id: row.transfer_id.clone(),
+                        });
+                    }
+                },
+            );
+        });
+        ui.horizontal(|ui| {
+            ui.label(theme::mono(theme::progress_bar(fraction, 14), 11.0).color(theme::ACCENT));
+            ui.label(
+                theme::mono(format!("{:>3}%", (fraction * 100.0) as u32), 10.0).color(theme::MUTED),
+            );
+            ui.label(
+                theme::mono(
+                    format!(
+                        "{}/{}  {}/s  {}",
                         format_bytes(row.bytes),
                         format_bytes(row.total),
                         format_bytes(speed as u64),
                         mode_label(row.transport)
-                    ))
-                    .size(10.0)
-                    .color(theme::MUTED),
-                );
-            });
+                    ),
+                    9.5,
+                )
+                .color(theme::MUTED),
+            );
         });
-        ui.separator();
+        ui.add_space(4.0);
     }
+
     actions
 }

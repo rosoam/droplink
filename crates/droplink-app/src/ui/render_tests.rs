@@ -80,15 +80,15 @@ fn populated_state() -> UiState {
             bytes: 1024,
         },
         HistoryEntry {
-            file_name: "bad.bin".into(),
+            file_name: "relay.bin".into(),
             direction: Direction::Receive,
-            ok: false,
-            path: None,
+            ok: true,
+            path: Some("/tmp/relay.bin".into()),
             transport: TransportMode::Relay,
-            bytes: 12,
+            bytes: 2048,
         },
     ];
-    state.last_error = Some("exemple d'erreur".into());
+    state.toast = Some(crate::state::Toast::error("exemple d'erreur"));
     state
 }
 
@@ -99,15 +99,15 @@ fn renders_main_screen() {
     let mut state = populated_state();
     let output = ctx.run(RawInput::default(), |ctx| {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui::section_title(ui, "À proximité");
+            crate::theme::section_header(ui, "Appareils", None);
             ui::devices::show(ui, &mut state);
-            ui::section_title(ui, "Envoyer");
+            crate::theme::section_header(ui, "Envoyer", None);
             let picker = ui::dropzone::show(ui, &mut state, true);
             assert!(!picker);
-            ui::section_title(ui, "Transferts");
+            crate::theme::section_header(ui, "Transferts", None);
             let _ = ui::queue::show(ui, &state);
-            ui::section_title(ui, "Historique");
-            ui::history::show(ui, &state);
+            crate::theme::section_header(ui, "Historique", None);
+            let _ = ui::history::show(ui, &state);
         });
     });
     assert!(!output.shapes.is_empty());
@@ -121,7 +121,7 @@ fn renders_empty_state() {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui::devices::show(ui, &mut state);
             ui::dropzone::show(ui, &mut state, false);
-            ui::history::show(ui, &state);
+            let _ = ui::history::show(ui, &state);
         });
     });
     assert!(!output.shapes.is_empty());

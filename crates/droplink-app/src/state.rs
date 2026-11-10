@@ -40,6 +40,44 @@ pub enum UiAction {
     Cancel {
         transfer_id: TransferId,
     },
+    Open {
+        path: PathBuf,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToastKind {
+    Success,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Toast {
+    pub text: String,
+    pub kind: ToastKind,
+    pub at: Instant,
+}
+
+impl Toast {
+    pub fn success(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            kind: ToastKind::Success,
+            at: Instant::now(),
+        }
+    }
+
+    pub fn error(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            kind: ToastKind::Error,
+            at: Instant::now(),
+        }
+    }
+
+    pub fn expired(&self) -> bool {
+        self.at.elapsed().as_secs_f32() > 4.0
+    }
 }
 
 #[derive(Default)]
@@ -52,7 +90,7 @@ pub struct UiState {
     pub history: Vec<HistoryEntry>,
     pub discovery_available: bool,
     pub settings_open: bool,
-    pub last_error: Option<String>,
+    pub toast: Option<Toast>,
     pub history_limit: usize,
 }
 
@@ -178,7 +216,7 @@ impl UiState {
                 self.queue.retain(|row| row.transfer_id != transfer_id);
                 self.incoming.remove(&transfer_id);
                 self.sas.remove(&transfer_id);
-                self.last_error = None;
+                self.toast = Some(Toast::success(format!("{} · transfert terminé", file_name)));
                 self.push_history(HistoryEntry {
                     file_name,
                     direction,
@@ -190,30 +228,20 @@ impl UiState {
             }
             Event::Failed {
                 transfer_id,
-                direction,
-                file_name,
                 reason,
-                transport,
+                ..
             } => {
-                let bytes = self
-                    .queue
-                    .iter()
-                    .find(|row| row.transfer_id == transfer_id)
-                    .map(|row| row.bytes)
-                    .unwrap_or(0);
                 self.queue.retain(|row| row.transfer_id != transfer_id);
                 self.incoming.remove(&transfer_id);
                 self.sas.remove(&transfer_id);
-                self.last_error = Some(reason);
-                self.push_history(HistoryEntry {
-                    file_name,
-                    direction,
-                    ok: false,
-                    path: None,
-                    transport,
-                    bytes,
-                });
+                self.toast = Some(Toast::error(reason));
             }
+        }
+    }
+
+    pub fn tick(&mut self) {
+        if self.toast.as_ref().map(Toast::expired).unwrap_or(false) {
+            self.toast = None;
         }
     }
 
@@ -342,6 +370,10 @@ mod tests {
         assert_eq!(state.history.len(), 1);
         assert!(state.history[0].ok);
         assert_eq!(state.history[0].bytes, 100);
+        assert!(matches!(
+            state.toast.as_ref().map(|toast| toast.kind),
+            Some(ToastKind::Success)
+        ));
     }
 
     #[test]
@@ -358,7 +390,14 @@ mod tests {
         });
         assert_eq!(state.queue.len(), 1);
         assert_eq!(state.queue[0].transfer_id, "t1");
-        assert_eq!(state.last_error.as_deref(), Some("boom"));
+        assert!(
+            state.history.is_empty(),
+            "failed transfers must not be listed"
+        );
+        assert!(matches!(
+            state.toast.as_ref().map(|toast| toast.kind),
+            Some(ToastKind::Error)
+        ));
     }
 
     #[test]
@@ -422,6 +461,37 @@ mod tests {
         state.selected = Some(PeerKey::Relay("peer-1".into()));
         state.apply(Event::DevicesChanged(vec![relay_peer("peer-1", "Renamed")]));
         assert!(state.selected.is_some());
+    }
+
+    #[test]
+    fn toast_expires() {
+        let mut state = UiState::new(10);
+        state.toast = Some(Toast {
+            text: "x".into(),
+            kind: ToastKind::Error,
+            at: Instant::now() - std::time::Duration::from_secs(5),
+        });
+        state.tick();
+        assert!(state.toast.is_none());
+    }
+
+    #[test]
+    fn failed_event_is_not_listed_but_toasts() {
+        let mut state = UiState::new(10);
+        state.apply(queued("t1", "a.bin"));
+        state.apply(Event::Failed {
+            transfer_id: "t1".into(),
+            direction: Direction::Send,
+            file_name: "a.bin".into(),
+            reason: "connexion refusée".into(),
+            transport: TransportMode::Direct,
+        });
+        assert!(state.queue.is_empty());
+        assert!(state.history.is_empty());
+        assert_eq!(
+            state.toast.as_ref().map(|toast| toast.text.as_str()),
+            Some("connexion refusée")
+        );
     }
 
     #[test]

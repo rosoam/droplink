@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, RichText, Stroke};
+use eframe::egui::{self, Margin, Stroke};
 
 use crate::state::UiState;
 use crate::theme;
@@ -6,43 +6,54 @@ use crate::theme;
 /// Returns `true` when the user asked for the file picker.
 pub fn show(ui: &mut egui::Ui, state: &mut UiState, hovering: bool) -> bool {
     let mut picker = false;
-    let selected = state.selected_peer().map(|peer| peer.alias.clone());
-
-    let fill = if hovering {
-        Color32::from_rgba_unmultiplied(59, 130, 246, 36)
-    } else {
-        Color32::TRANSPARENT
-    };
-    let stroke = Stroke::new(
-        if hovering { 2.0 } else { 1.0 },
-        if hovering {
-            theme::ACCENT
-        } else {
-            Color32::from_rgb(60, 66, 78)
-        },
-    );
+    let selected = state
+        .selected_peer()
+        .map(|peer| crate::ui::display_name(&peer.alias));
 
     egui::Frame::new()
-        .fill(fill)
-        .stroke(stroke)
-        .corner_radius(12)
-        .inner_margin(egui::Margin::same(16))
+        .fill(if hovering {
+            theme::ACCENT_DIM
+        } else {
+            theme::PANEL
+        })
+        .stroke(Stroke::new(
+            1.0,
+            if hovering {
+                theme::ACCENT
+            } else {
+                theme::BORDER
+            },
+        ))
+        .inner_margin(Margin::symmetric(10, 10))
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("🗂").size(26.0));
-                match &selected {
-                    Some(name) => {
-                        ui.label(RichText::new("Dépose un fichier sur").color(theme::MUTED));
-                        ui.label(RichText::new(name).strong());
-                    }
-                    None => {
-                        ui.label(
-                            RichText::new("Sélectionne un appareil ci-dessus").color(theme::MUTED),
-                        );
-                    }
-                }
-                ui.add_space(4.0);
-                if ui.button("Choisir un fichier…").clicked() {
+                ui.label(
+                    theme::mono(
+                        if theme::is_mobile() {
+                            "choisir un fichier"
+                        } else {
+                            "déposer un fichier"
+                        },
+                        12.0,
+                    )
+                    .color(if selected.is_some() {
+                        theme::TEXT
+                    } else {
+                        theme::MUTED
+                    }),
+                );
+                ui.label(
+                    theme::mono(
+                        match &selected {
+                            Some(name) => format!("-> {name}"),
+                            None => "aucun appareil sélectionné".to_string(),
+                        },
+                        10.5,
+                    )
+                    .color(theme::MUTED),
+                );
+                ui.add_space(6.0);
+                if theme::action_button(ui, "choisir").clicked() {
                     picker = true;
                 }
             });

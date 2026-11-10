@@ -60,7 +60,7 @@ final class DropLinkPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewCont
         }
     }
 
-    private static func rootViewController() -> UIViewController? {
+    static func rootViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
         let window = scene?.windows.first(where: { $0.isKeyWindow }) ?? scene?.windows.first
@@ -169,4 +169,26 @@ final class DropLinkPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewCont
 @_cdecl("droplink_ios_pick_file")
 public func droplink_ios_pick_file() {
     DropLinkPicker.shared.present()
+}
+
+@_cdecl("droplink_ios_open_file")
+public func droplink_ios_open_file(_ pathPtr: UnsafePointer<CChar>?) {
+    guard let pathPtr else { return }
+    let path = String(cString: pathPtr)
+    DispatchQueue.main.async {
+        guard let root = DropLinkPicker.rootViewController() else { return }
+        let url = URL(fileURLWithPath: path)
+        let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = activity.popoverPresentationController {
+            popover.sourceView = root.view
+            popover.sourceRect = CGRect(
+                x: root.view.bounds.midX,
+                y: root.view.bounds.midY,
+                width: 1,
+                height: 1
+            )
+            popover.permittedArrowDirections = []
+        }
+        root.present(activity, animated: true)
+    }
 }

@@ -1,4 +1,4 @@
-use crate::state::{UiAction, UiState};
+use crate::state::{Toast, ToastKind, UiAction, UiState};
 use crate::store::{self, Paths};
 use crate::theme;
 use crate::ui;
@@ -131,11 +131,9 @@ impl App {
             tracing::info!(port = bound.port, "ios bonjour configured");
         }
 
-        let discovery_available = discovery.is_some();
-
         tracing::info!(
             port = bound.port,
-            discovery = discovery_available,
+            discovery = discovery.is_some(),
             relay = config.relay_enabled,
             "droplink started"
         );
@@ -181,6 +179,7 @@ impl App {
             UiAction::Cancel { transfer_id } => {
                 self.handle.command(Command::Cancel { transfer_id })
             }
+            UiAction::Open { path } => open_path(&path),
         }
     }
 
@@ -209,7 +208,7 @@ impl App {
                 if let Some(peer) = self.state.selected_peer().cloned() {
                     self.dispatch(UiAction::Send { peer, path });
                 } else {
-                    self.state.last_error = Some("Sélectionne un appareil d'abord".into());
+                    self.state.toast = Some(Toast::error("Sélectionne un appareil d'abord"));
                 }
                 self.picker = None;
             }
@@ -233,10 +232,16 @@ impl App {
                             file = %incoming.file_name,
                             "incoming request"
                         ),
-                        Event::Completed { file_name, transport, .. } => {
+                        Event::Completed {
+                            file_name,
+                            transport,
+                            ..
+                        } => {
                             tracing::info!(%file_name, ?transport, "transfer completed")
                         }
-                        Event::Failed { file_name, reason, .. } => {
+                        Event::Failed {
+                            file_name, reason, ..
+                        } => {
                             tracing::warn!(%file_name, %reason, "transfer failed")
                         }
                         Event::Sas { code, .. } => tracing::info!(%code, "sas"),
@@ -257,6 +262,38 @@ impl App {
             store::save_history(&self.paths, &self.state.history);
         }
     }
+
+    fn status(&self) -> (String, egui::Color32) {
+        if !self.state.discovery_available {
+            ("Découverte indisponible".to_string(), theme::WARN)
+        } else if self.state.devices.is_empty() {
+            ("Recherche d'appareils…".to_string(), theme::AMBER)
+        } else {
+            let count = self.state.devices.len();
+            (
+                format!(
+                    "{count} appareil{} · prêt",
+                    if count == 1 { "" } else { "s" }
+                ),
+                theme::ACCENT,
+            )
+        }
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn open_path(path: &std::path::Path) {
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(path).spawn();
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("explorer").arg(path).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+}
+
+#[cfg(target_os = "ios")]
+fn open_path(path: &std::path::Path) {
+    droplink_ios_bridge::open_file(path);
 }
 
 impl eframe::App for App {
@@ -265,6 +302,7 @@ impl eframe::App for App {
             theme::apply(ctx);
             self.theme_applied = true;
         }
+        self.state.tick();
         self.drain_events();
         self.poll_picker();
 
@@ -297,8 +335,8 @@ impl eframe::App for App {
                         }
                     }
                     None => {
-                        self.state.last_error =
-                            Some("Sélectionne un appareil avant d'envoyer".into());
+                        self.state.toast =
+                            Some(Toast::error("Sélectionne un appareil avant d'envoyer"));
                     }
                 }
             }
@@ -314,8 +352,7 @@ impl eframe::App for App {
         });
         if !dropped.is_empty() {
             if self.state.selected_peer().is_none() {
-                self.state.last_error =
-                    Some("Sélectionne un appareil avant de déposer un fichier".into());
+                self.state.toast = Some(Toast::error("Sélectionne un appareil avant de déposer"));
             } else {
                 for action in self.state.on_files_dropped(dropped) {
                     self.dispatch(action);
@@ -326,52 +363,83 @@ impl eframe::App for App {
 
         let mut actions: Vec<UiAction> = Vec::new();
         let mut picker_requested = false;
+        let (status, status_color) = self.status();
 
-        egui::TopBottomPanel::top("header").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("DropLink").size(18.0).strong());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("⚙").on_hover_text("Réglages").clicked() {
-                        self.state.settings_open = true;
-                    }
-                    let count = self.state.devices.len();
+        egui::TopBottomPanel::top("header")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::BG)
+                    .inner_margin(egui::Margin::symmetric(theme::page_pad(), 10)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new(format!(
-                            "{count} appareil{}",
-                            if count == 1 { "" } else { "s" }
-                        ))
-                        .size(11.0)
-                        .color(theme::MUTED),
+                        egui::RichText::new("droplink")
+                            .monospace()
+                            .size(15.0)
+                            .strong()
+                            .color(theme::ACCENT),
+                    );
+                    ui.label(theme::mono("v1.0.0", 9.5).color(theme::MUTED));
+                    let width = ui.available_width();
+                    ui.allocate_ui_with_layout(
+                        egui::Vec2::new(width, 22.0),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            if theme::action_button(ui, "cfg").clicked() {
+                                self.state.settings_open = true;
+                            }
+                            ui.label(
+                                egui::RichText::new(format!("* {status}"))
+                                    .monospace()
+                                    .size(9.5)
+                                    .color(status_color),
+                            );
+                        },
                     );
                 });
             });
-        });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui::section_title(ui, "À proximité");
-                    ui::devices::show(ui, &mut self.state);
-                    ui.add_space(6.0);
-                    ui::section_title(ui, "Envoyer");
-                    if ui::dropzone::show(ui, &mut self.state, hovering) {
-                        picker_requested = true;
-                    }
-                    if !self.state.queue.is_empty() {
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::BG)
+                    .inner_margin(egui::Margin::symmetric(theme::page_pad(), 0)),
+            )
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
                         ui.add_space(8.0);
-                        ui::section_title(ui, "Transferts");
-                        actions.extend(ui::queue::show(ui, &self.state));
-                    }
-                    if let Some(error) = self.state.last_error.clone() {
+                        theme::section_header(
+                            ui,
+                            "pairs",
+                            Some(&format!("{}", self.state.devices.len())),
+                        );
                         ui.add_space(6.0);
-                        ui.colored_label(theme::WARN, format!("✗ {error}"));
-                    }
-                    ui.add_space(10.0);
-                    ui::section_title(ui, "Historique");
-                    ui::history::show(ui, &self.state);
-                });
-        });
+                        ui::devices::show(ui, &mut self.state);
+
+                        ui.add_space(10.0);
+                        theme::section_header(ui, "envoyer", None);
+                        ui.add_space(6.0);
+                        if ui::dropzone::show(ui, &mut self.state, hovering) {
+                            picker_requested = true;
+                        }
+
+                        if !self.state.queue.is_empty() {
+                            ui.add_space(10.0);
+                            theme::section_header(ui, "transferts", None);
+                            ui.add_space(6.0);
+                            actions.extend(ui::queue::show(ui, &self.state));
+                        }
+
+                        ui.add_space(10.0);
+                        theme::section_header(ui, "historique", None);
+                        ui.add_space(6.0);
+                        actions.extend(ui::history::show(ui, &self.state));
+                        ui.add_space(18.0);
+                    });
+            });
 
         actions.extend(ui::accept::show(ctx, &self.state));
 
@@ -389,8 +457,9 @@ impl eframe::App for App {
                     } else {
                         self.config = config;
                         self.state.settings_open = false;
-                        self.state.last_error =
-                            Some("Réglages enregistrés — redémarre pour les appliquer.".into());
+                        self.state.toast = Some(Toast::error(
+                            "Réglages enregistrés — redémarre pour les appliquer",
+                        ));
                     }
                 }
                 ui::settings::Outcome::Close => self.state.settings_open = false,
@@ -402,15 +471,18 @@ impl eframe::App for App {
         }
         if picker_requested {
             if self.state.selected_peer().is_none() {
-                self.state.last_error =
-                    Some("Sélectionne d'abord un appareil dans la liste".into());
+                self.state.toast = Some(Toast::error("Sélectionne d'abord un appareil"));
             } else {
                 self.open_picker();
             }
         }
 
+        if let Some(toast) = &self.state.toast {
+            theme::toast(ctx, &toast.text, matches!(toast.kind, ToastKind::Error));
+        }
+
         let active = !self.state.queue.is_empty();
-        ctx.request_repaint_after(if active {
+        ctx.request_repaint_after(if active || self.state.toast.is_some() {
             Duration::from_millis(100)
         } else {
             Duration::from_millis(500)

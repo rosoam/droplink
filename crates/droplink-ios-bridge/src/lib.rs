@@ -63,6 +63,7 @@ extern "C" {
     );
     fn droplink_ios_stop_bonjour();
     fn droplink_ios_pick_file();
+    fn droplink_ios_open_file(path: *const c_char);
 }
 
 pub fn start_bonjour(port: u16, device_id: &str, alias: &str, ip: &str) {
@@ -88,4 +89,12 @@ pub fn stop_bonjour() {
 
 pub fn pick_file() {
     unsafe { droplink_ios_pick_file() }
+}
+
+/// Open a received file: the Swift side presents the system share/preview sheet.
+pub fn open_file(path: &std::path::Path) {
+    let Ok(path) = CString::new(path.to_string_lossy().as_bytes()) else {
+        return;
+    };
+    unsafe { droplink_ios_open_file(path.as_ptr()) }
 }

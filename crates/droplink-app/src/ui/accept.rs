@@ -13,43 +13,40 @@ pub fn show(ctx: &egui::Context, state: &UiState) -> Vec<UiAction> {
         let Some(incoming) = state.incoming.get(&id).cloned() else {
             continue;
         };
+        let sender = crate::ui::display_name(&incoming.sender_alias);
         let response = egui::Modal::new(egui::Id::new(("accept", id.clone()))).show(ctx, |ui| {
             ui.set_width(300.0);
-            ui.label(
-                RichText::new("TRANSFERT ENTRANT")
-                    .size(10.0)
-                    .color(theme::MUTED),
+            ui.label(theme::mono("-- entrant", 10.5).color(theme::MUTED));
+            ui.add_space(2.0);
+            theme::key_value(ui, "de", &sender);
+            theme::key_value(
+                ui,
+                "file",
+                &format!(
+                    "{} ({})",
+                    incoming.file_name,
+                    format_bytes(incoming.file_size)
+                ),
             );
-            ui.heading(&incoming.sender_alias);
-            ui.add_space(4.0);
-            ui.label(RichText::new(&incoming.file_name).strong().size(14.0));
-            ui.label(
-                RichText::new(format!(
-                    "{} · {}",
-                    format_bytes(incoming.file_size),
-                    mode_label(incoming.transport)
-                ))
-                .size(11.0)
-                .color(theme::MUTED),
-            );
-            ui.add_space(8.0);
-            ui.label(
-                RichText::new(format!("Code de sécurité  {}", sas_spaced(&incoming.sas)))
-                    .monospace()
-                    .color(theme::ACCENT),
-            );
-            ui.label(
-                RichText::new("Compare ce code avec l'expéditeur avant d'accepter.")
-                    .size(10.0)
-                    .color(theme::MUTED),
-            );
-            ui.add_space(12.0);
+            theme::key_value(ui, "via", mode_label(incoming.transport));
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(theme::mono("sas   ", 11.0).color(theme::MUTED));
+                ui.label(
+                    RichText::new(sas_spaced(&incoming.sas))
+                        .monospace()
+                        .size(20.0)
+                        .color(theme::ACCENT),
+                );
+            });
+            ui.label(theme::mono("compare ce code avec l'expéditeur", 9.5).color(theme::MUTED));
+            ui.add_space(10.0);
             let mut decision = None;
             ui.horizontal(|ui| {
-                if ui.button("Refuser").clicked() {
+                if theme::muted_button(ui, "refuser").clicked() {
                     decision = Some(false);
                 }
-                if ui.button("Accepter").clicked() {
+                if theme::action_button(ui, "accepter").clicked() {
                     decision = Some(true);
                 }
             });
