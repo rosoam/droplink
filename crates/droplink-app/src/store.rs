@@ -42,6 +42,19 @@ fn ios_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+fn default_receive_dir() -> PathBuf {
+    #[cfg(not(target_os = "ios"))]
+    {
+        directories::UserDirs::new()
+            .and_then(|dirs| dirs.download_dir().map(|dir| dir.join("DropLink")))
+            .unwrap_or_else(|| PathBuf::from("DropLink"))
+    }
+    #[cfg(target_os = "ios")]
+    {
+        ios_home().join("Documents/DropLink")
+    }
+}
+
 fn default_config() -> Config {
     #[cfg(not(target_os = "ios"))]
     let name = hostname::get()
@@ -54,12 +67,7 @@ fn default_config() -> Config {
     #[cfg(target_os = "ios")]
     let name = "iPhone".to_string();
 
-    #[cfg(not(target_os = "ios"))]
-    let receive_dir = directories::UserDirs::new()
-        .and_then(|dirs| dirs.download_dir().map(|dir| dir.join("DropLink")))
-        .unwrap_or_else(|| PathBuf::from("DropLink"));
-    #[cfg(target_os = "ios")]
-    let receive_dir = ios_home().join("Documents/DropLink");
+    let receive_dir = default_receive_dir();
     let name: String = name.chars().take(64).collect();
     Config::new(
         droplink_core::config::generate_device_id(),
@@ -86,7 +94,19 @@ pub fn load_or_create_for(paths: &Paths) -> Config {
         .and_then(|raw| serde_json::from_str::<Config>(&raw).ok())
         .filter(|config| config.validate().is_ok());
 
-    let config = loaded.unwrap_or_else(default_config);
+    let mut config = loaded.unwrap_or_else(default_config);
+
+    // The iOS data container UUID changes between installs. Never trust a persisted absolute
+    // path: recreate the receive directory and fall back to the default when it is not writable.
+    #[cfg(target_os = "ios")]
+    {
+        config.receive_dir = default_receive_dir();
+    }
+    if std::fs::create_dir_all(&config.receive_dir).is_err() {
+        config.receive_dir = default_receive_dir();
+        let _ = std::fs::create_dir_all(&config.receive_dir);
+    }
+
     if let Err(err) = save_config(paths, &config) {
         tracing::warn!(error = %err, "could not persist config");
     }

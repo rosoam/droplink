@@ -133,6 +133,7 @@ impl App {
 
         tracing::info!(
             port = bound.port,
+            receive_dir = %config.receive_dir.display(),
             discovery = discovery.is_some(),
             relay = config.relay_enabled,
             "droplink started"
