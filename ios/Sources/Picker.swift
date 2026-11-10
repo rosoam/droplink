@@ -175,6 +175,7 @@ public func droplink_ios_pick_file() {
 public func droplink_ios_open_file(_ pathPtr: UnsafePointer<CChar>?) {
     guard let pathPtr else { return }
     let path = String(cString: pathPtr)
+    pickerLog("open requested \(path)")
     DispatchQueue.main.async {
         guard let root = DropLinkPicker.rootViewController() else { return }
         let url = URL(fileURLWithPath: path)

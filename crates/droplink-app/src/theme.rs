@@ -2,15 +2,15 @@ use eframe::egui::{
     self, Color32, CornerRadius, FontId, Response, RichText, Stroke, TextStyle, UiBuilder, Vec2,
 };
 
-pub const BG: Color32 = Color32::from_rgb(9, 11, 9);
-pub const PANEL: Color32 = Color32::from_rgb(14, 17, 14);
-pub const SURFACE: Color32 = Color32::from_rgb(14, 17, 14);
-pub const TEXT: Color32 = Color32::from_rgb(214, 222, 214);
-pub const MUTED: Color32 = Color32::from_rgb(107, 122, 107);
-pub const ACCENT: Color32 = Color32::from_rgb(124, 227, 139);
-pub const ACCENT_DIM: Color32 = Color32::from_rgb(24, 30, 24);
-pub const BORDER: Color32 = Color32::from_rgb(34, 46, 34);
-pub const WARN: Color32 = Color32::from_rgb(248, 113, 113);
+pub const BG: Color32 = Color32::from_rgb(4, 5, 6);
+pub const PANEL: Color32 = Color32::from_rgb(9, 11, 12);
+pub const SURFACE: Color32 = Color32::from_rgb(9, 11, 12);
+pub const TEXT: Color32 = Color32::from_rgb(212, 216, 220);
+pub const MUTED: Color32 = Color32::from_rgb(104, 111, 118);
+pub const ACCENT: Color32 = Color32::from_rgb(126, 217, 160);
+pub const ACCENT_DIM: Color32 = Color32::from_rgb(17, 21, 23);
+pub const BORDER: Color32 = Color32::from_rgb(26, 31, 35);
+pub const WARN: Color32 = Color32::from_rgb(240, 113, 113);
 pub const AMBER: Color32 = Color32::from_rgb(214, 179, 74);
 
 pub fn is_mobile() -> bool {

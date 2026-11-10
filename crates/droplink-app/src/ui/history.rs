@@ -13,18 +13,19 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
 
     for (index, entry) in state.history.iter().enumerate() {
         let path = entry.path.clone();
+        let mut open_requested = false;
         let response = theme::row(ui, egui::Id::new(("history", index)), false, |ui| {
             ui.label(theme::mono("+", 12.0).color(theme::ACCENT));
             ui.add_space(4.0);
-            let name_width = (ui.available_width() - 104.0).max(40.0);
+            let name_width = (ui.available_width() - 132.0).max(40.0);
             theme::truncated(ui, &entry.file_name, 12.0, theme::TEXT, name_width);
             let width = ui.available_width();
             ui.allocate_ui_with_layout(
                 egui::Vec2::new(width, 16.0),
                 egui::Layout::right_to_left(egui::Align::Center),
                 |ui| {
-                    if path.is_some() {
-                        ui.label(theme::mono("ouvrir", 10.5).color(theme::ACCENT));
+                    if path.is_some() && theme::action_button(ui, "ouvrir").clicked() {
+                        open_requested = true;
                     }
                     ui.label(
                         theme::mono(
@@ -41,6 +42,9 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
             );
         });
         if response.clicked() {
+            open_requested = true;
+        }
+        if open_requested {
             if let Some(path) = path {
                 actions.push(UiAction::Open { path: path.into() });
             }

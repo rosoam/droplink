@@ -106,7 +106,12 @@ pub fn load_history(paths: &Paths) -> Vec<crate::state::HistoryEntry> {
     std::fs::read_to_string(paths.history_file())
         .ok()
         .and_then(|raw| serde_json::from_str::<Vec<crate::state::HistoryEntry>>(&raw).ok())
-        .map(|entries| entries.into_iter().filter(|entry| entry.ok).collect())
+        .map(|entries| {
+            entries
+                .into_iter()
+                .filter(|entry| entry.ok && entry.path.is_some())
+                .collect()
+        })
         .unwrap_or_default()
 }
 

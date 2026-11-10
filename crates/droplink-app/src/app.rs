@@ -159,7 +159,7 @@ impl App {
         })
     }
 
-    fn dispatch(&self, action: UiAction) {
+    fn dispatch(&mut self, action: UiAction) {
         match action {
             UiAction::Send { peer, path } => {
                 tracing::info!(
@@ -179,7 +179,14 @@ impl App {
             UiAction::Cancel { transfer_id } => {
                 self.handle.command(Command::Cancel { transfer_id })
             }
-            UiAction::Open { path } => open_path(&path),
+            UiAction::Open { path } => {
+                tracing::info!(path = %path.display(), "open requested");
+                if path.exists() {
+                    open_path(&path);
+                } else {
+                    self.state.toast = Some(Toast::error("fichier introuvable"));
+                }
+            }
         }
     }
 
@@ -200,10 +207,11 @@ impl App {
     }
 
     fn poll_picker(&mut self) {
-        let Some(rx) = &self.picker else {
+        let Some(rx) = self.picker.as_ref() else {
             return;
         };
-        match rx.try_recv() {
+        let received = rx.try_recv();
+        match received {
             Ok(Some(path)) => {
                 if let Some(peer) = self.state.selected_peer().cloned() {
                     self.dispatch(UiAction::Send { peer, path });
