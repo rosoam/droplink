@@ -226,7 +226,8 @@ Le relais ne déchiffre rien : il relaie des trames `[circuit_id 16 octets || ci
 voit ni nom de fichier ni contenu. Le direct reste prioritaire quand les deux appareils sont sur
 le même réseau.
 
-Déploiement : voir `deploy/README.md` (systemd + Caddy WSS). Détails : `docs/REMOTE.md`.
+Déploiement : voir `deploy/README.md` (systemd + Caddy WSS). Spécification, limites et coûts :
+`docs/RELAY-SPEC.md`. Détails : `docs/REMOTE.md`.
 
 ---
 
