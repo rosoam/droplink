@@ -257,6 +257,9 @@ Aucune technologie unique ne couvre Windows + Linux + macOS + iPhone, à distanc
 La « révolution » réaliste n'est pas une radio unique : c'est un **sélecteur de transport** qui
 prend le meilleur disponible pour la paire d'appareils, sans que l'utilisateur ait à choisir.
 
+Le plan détaillé du transport Internet est dans [`WEBRTC-PLAN.md`](WEBRTC-PLAN.md) : signaling
+minuscule, STUN public, TURN en secours, données P2P, phases et tests.
+
 ## Sources
 
 - Apple, *Supercharge device connectivity with Wi-Fi Aware* (WWDC25) — https://developer.apple.com/videos/play/wwdc2025/228/
