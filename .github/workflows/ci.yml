@@ -1,9 +1,11 @@
 name: CI
 
+# CI lourde : uniquement sur un tag de version, jamais sur un push de branche.
+# Un push sur main ne déclenche rien. Pas de PR non plus.
 on:
   push:
-    branches: [main]
-  pull_request:
+    tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   test:
