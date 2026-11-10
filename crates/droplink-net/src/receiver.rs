@@ -180,37 +180,41 @@ where
 
     match result {
         Ok(final_path) => {
-            let sealed = session.seal(&serde_json::to_vec(&Control::Done {
-                transfer_id: meta.transfer_id.clone(),
-                ok: true,
-                reason: None,
-            })?)?;
-            let _ = framed.write_sealed_control(&sealed).await;
-            state.progress_remove(&meta.transfer_id);
+            // Emit the terminal event **before** acking `Done`: the sender releases its
+            // per-device lock as soon as it reads the ack, so acking first lets the next
+            // transfer start before the receiver has published this one's completion. That
+            // broke the "one transfer per device" guarantee under load.
             state.emit(Event::Completed {
-                transfer_id: meta.transfer_id,
+                transfer_id: meta.transfer_id.clone(),
                 direction: Direction::Receive,
                 file_name: meta.file_name,
                 path: Some(final_path),
                 transport: mode,
             });
+            state.progress_remove(&meta.transfer_id);
+            let sealed = session.seal(&serde_json::to_vec(&Control::Done {
+                transfer_id: meta.transfer_id,
+                ok: true,
+                reason: None,
+            })?)?;
+            let _ = framed.write_sealed_control(&sealed).await;
             Ok(())
         }
         Err(err) => {
-            let sealed = session.seal(&serde_json::to_vec(&Control::Done {
-                transfer_id: meta.transfer_id.clone(),
-                ok: false,
-                reason: Some(err.to_string()),
-            })?)?;
-            let _ = framed.write_sealed_control(&sealed).await;
-            state.progress_remove(&meta.transfer_id);
             state.emit(Event::Failed {
-                transfer_id: meta.transfer_id,
+                transfer_id: meta.transfer_id.clone(),
                 direction: Direction::Receive,
                 file_name: meta.file_name,
                 reason: err.to_string(),
                 transport: mode,
             });
+            state.progress_remove(&meta.transfer_id);
+            let sealed = session.seal(&serde_json::to_vec(&Control::Done {
+                transfer_id: meta.transfer_id,
+                ok: false,
+                reason: Some(err.to_string()),
+            })?)?;
+            let _ = framed.write_sealed_control(&sealed).await;
             Err(err)
         }
     }
