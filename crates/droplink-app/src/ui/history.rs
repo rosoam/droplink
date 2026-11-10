@@ -15,7 +15,9 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
         let path = entry.path.clone();
         let response = theme::row(ui, egui::Id::new(("history", index)), false, |ui| {
             ui.label(theme::mono("+", 12.0).color(theme::ACCENT));
-            ui.label(theme::mono(&entry.file_name, 12.0));
+            ui.add_space(4.0);
+            let name_width = (ui.available_width() - 104.0).max(40.0);
+            theme::truncated(ui, &entry.file_name, 12.0, theme::TEXT, name_width);
             let width = ui.available_width();
             ui.allocate_ui_with_layout(
                 egui::Vec2::new(width, 16.0),

@@ -8,7 +8,7 @@ pub const SURFACE: Color32 = Color32::from_rgb(14, 17, 14);
 pub const TEXT: Color32 = Color32::from_rgb(214, 222, 214);
 pub const MUTED: Color32 = Color32::from_rgb(107, 122, 107);
 pub const ACCENT: Color32 = Color32::from_rgb(124, 227, 139);
-pub const ACCENT_DIM: Color32 = Color32::from_rgb(26, 44, 29);
+pub const ACCENT_DIM: Color32 = Color32::from_rgb(24, 30, 24);
 pub const BORDER: Color32 = Color32::from_rgb(34, 46, 34);
 pub const WARN: Color32 = Color32::from_rgb(248, 113, 113);
 pub const AMBER: Color32 = Color32::from_rgb(214, 179, 74);
@@ -74,6 +74,25 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_style(style);
 }
 
+pub fn truncated(
+    ui: &mut egui::Ui,
+    text: impl Into<String>,
+    size: f32,
+    color: Color32,
+    width: f32,
+) {
+    ui.add_sized(
+        Vec2::new(width.max(24.0), 16.0),
+        egui::Label::new(
+            RichText::new(text.into())
+                .monospace()
+                .size(size)
+                .color(color),
+        )
+        .truncate(),
+    );
+}
+
 pub fn mono(text: impl Into<String>, size: f32) -> RichText {
     RichText::new(text.into()).monospace().size(size)
 }
@@ -102,12 +121,13 @@ pub fn section_header(ui: &mut egui::Ui, title: &str, meta: Option<&str>) {
 pub fn key_value(ui: &mut egui::Ui, key: &str, value: &str) {
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new(format!("{key:<6}"))
+            RichText::new(format!("{key:<7}"))
                 .monospace()
                 .size(11.0)
                 .color(MUTED),
         );
-        ui.label(RichText::new(value).monospace().size(12.0).color(TEXT));
+        let width = (ui.available_width() - 2.0).max(40.0);
+        truncated(ui, value, 12.0, TEXT, width);
     });
 }
 
@@ -155,6 +175,11 @@ pub fn row(
     let response = ui.interact(rect, id, egui::Sense::click());
     if selected {
         ui.painter().rect_filled(rect, 0.0, ACCENT_DIM);
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(rect.min, Vec2::new(2.0, rect.height())),
+            0.0,
+            ACCENT,
+        );
     }
     let inner = rect.shrink2(Vec2::new(6.0, 2.0));
     ui.scope_builder(

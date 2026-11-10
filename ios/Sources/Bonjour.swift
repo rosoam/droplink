@@ -26,6 +26,7 @@ final class Bonjour: NSObject, NetServiceDelegate {
     private var publisher: NetService?
     private var browser: NWBrowser?
     private var publishedName: String?
+    private var ownId: String?
     private var idByService: [String: String] = [:]
 
     func start(port: UInt16, deviceId: String, alias: String, ip: String) {
@@ -33,6 +34,7 @@ final class Bonjour: NSObject, NetServiceDelegate {
             guard let self else { return }
             self.stopLocked()
 
+            self.ownId = deviceId
             let short = String(deviceId.prefix(6))
             let name = "\(alias)-\(short)"
             let service = NetService(
@@ -55,6 +57,7 @@ final class Bonjour: NSObject, NetServiceDelegate {
             self.publisher = service
             self.publishedName = service.name
             log("bonjour publish requested name=\(name) port=\(port) ip=\(ip)")
+            Destination.shared.notifyName()
 
             let parameters = NWParameters.tcp
             let browser = NWBrowser(
@@ -134,7 +137,7 @@ final class Bonjour: NSObject, NetServiceDelegate {
         }
         let alias = value("alias") ?? "Appareil"
         let name = serviceName(result) ?? result.endpoint.debugDescription
-        if name == publishedName {
+        if name == publishedName || id == ownId {
             return
         }
         idByService[name] = id

@@ -34,6 +34,37 @@ pub fn emit_peer(event: PeerEvent) {
     }
 }
 
+static DESTINATION: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn destination_slot() -> &'static Mutex<Option<String>> {
+    DESTINATION.get_or_init(|| Mutex::new(None))
+}
+
+pub fn set_destination(name: Option<String>) {
+    if let Ok(mut slot) = destination_slot().lock() {
+        *slot = name;
+    }
+}
+
+pub fn destination() -> Option<String> {
+    destination_slot().lock().ok().and_then(|slot| slot.clone())
+}
+
+pub fn pick_folder() {
+    unsafe { droplink_ios_pick_folder() }
+}
+
+pub fn open_files() {
+    unsafe { droplink_ios_open_files() }
+}
+
+pub fn export_received(path: &std::path::Path) {
+    let Ok(path) = CString::new(path.to_string_lossy().as_bytes()) else {
+        return;
+    };
+    unsafe { droplink_ios_export(path.as_ptr()) }
+}
+
 static PICKED_FILES: OnceLock<Mutex<Vec<PathBuf>>> = OnceLock::new();
 
 fn picked_files() -> &'static Mutex<Vec<PathBuf>> {
@@ -64,6 +95,9 @@ extern "C" {
     fn droplink_ios_stop_bonjour();
     fn droplink_ios_pick_file();
     fn droplink_ios_open_file(path: *const c_char);
+    fn droplink_ios_pick_folder();
+    fn droplink_ios_open_files();
+    fn droplink_ios_export(path: *const c_char);
 }
 
 pub fn start_bonjour(port: u16, device_id: &str, alias: &str, ip: &str) {

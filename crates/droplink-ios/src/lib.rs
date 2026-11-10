@@ -72,3 +72,9 @@ pub extern "C" fn droplink_ios_log(message: *const c_char) {
     };
     droplink_ios_bridge::log(&message);
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn droplink_ios_destination_changed(name: *const c_char) {
+    let name = copy_string(name);
+    droplink_ios_bridge::set_destination(name);
+}

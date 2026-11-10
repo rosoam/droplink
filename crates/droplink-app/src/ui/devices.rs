@@ -50,7 +50,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut UiState) {
             );
         });
         if response.clicked() {
-            state.selected = Some(key);
+            state.toggle_selected(key);
         }
     }
 }

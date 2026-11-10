@@ -550,7 +550,7 @@ async fn send_task(state: Arc<EngineState>, peer: Peer, path: PathBuf) {
             transfer_id,
             direction: Direction::Send,
             file_name,
-            path: None,
+            path: Some(path),
             transport: mode,
         }),
         Err(err) => state.emit(Event::Failed {

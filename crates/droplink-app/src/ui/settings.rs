@@ -65,6 +65,8 @@ impl SettingsDraft {
 pub enum Outcome {
     Save(Config),
     Close,
+    PickFolder,
+    OpenFiles,
 }
 
 fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
@@ -84,6 +86,7 @@ pub fn show(
     draft: &mut SettingsDraft,
     base: &Config,
     error: &mut Option<String>,
+    ios_destination: Option<&str>,
 ) -> Option<Outcome> {
     if !*open {
         return None;
@@ -101,8 +104,30 @@ pub fn show(
             ui.label(theme::mono("-- appareil", 10.0).color(theme::MUTED));
             ui.add_space(4.0);
             field(ui, "Nom de l'appareil", &mut draft.device_name);
-            field(ui, "Dossier de réception", &mut draft.receive_dir);
-            field(ui, "Port fixe (vide = auto)", &mut draft.port_pref);
+
+            if theme::is_mobile() {
+                ui.label(theme::mono("Destination", 9.5).color(theme::MUTED));
+                ui.label(
+                    theme::mono(ios_destination.unwrap_or("DropLink (Fichiers)"), 11.5)
+                        .color(theme::TEXT),
+                );
+                ui.horizontal(|ui| {
+                    if theme::action_button(ui, "choisir").clicked() {
+                        outcome = Some(Outcome::PickFolder);
+                    }
+                    if theme::muted_button(ui, "fichiers").clicked() {
+                        outcome = Some(Outcome::OpenFiles);
+                    }
+                });
+                ui.label(
+                    theme::mono("images/vidéos -> Photos, le reste -> ce dossier", 9.5)
+                        .color(theme::MUTED),
+                );
+                ui.add_space(6.0);
+            } else {
+                field(ui, "Dossier de réception", &mut draft.receive_dir);
+                field(ui, "Port fixe (vide = auto)", &mut draft.port_pref);
+            }
 
             ui.add_space(4.0);
             ui.label(theme::mono("-- réseau", 10.0).color(theme::MUTED));

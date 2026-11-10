@@ -11,11 +11,7 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
     }
 
     for row in &state.queue {
-        let fraction = if row.total > 0 {
-            (row.bytes as f32 / row.total as f32).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
+        let fraction = row.displayed.clamp(0.0, 1.0);
         let elapsed = row.started.elapsed().as_secs_f32().max(0.001);
         let speed = row.bytes as f32 / elapsed;
 
@@ -31,7 +27,8 @@ pub fn show(ui: &mut egui::Ui, state: &UiState) -> Vec<UiAction> {
                 )
                 .color(theme::ACCENT),
             );
-            ui.label(theme::mono(&row.file_name, 12.0));
+            let name_width = (ui.available_width() - 34.0).max(40.0);
+            theme::truncated(ui, &row.file_name, 12.0, theme::TEXT, name_width);
             let width = ui.available_width();
             ui.allocate_ui_with_layout(
                 egui::Vec2::new(width, 16.0),

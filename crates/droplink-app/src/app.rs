@@ -223,6 +223,15 @@ impl App {
         for _ in 0..2000 {
             match self.events.try_recv() {
                 Ok(event) => {
+                    #[cfg(target_os = "ios")]
+                    if let Event::Completed {
+                        direction: droplink_core::protocol::Direction::Receive,
+                        path: Some(path),
+                        ..
+                    } = &event
+                    {
+                        droplink_ios_bridge::export_received(path);
+                    }
                     match &event {
                         Event::Queued { file_name, .. } => {
                             tracing::info!(%file_name, "queued")
@@ -303,6 +312,8 @@ impl eframe::App for App {
             self.theme_applied = true;
         }
         self.state.tick();
+        let dt = ctx.input(|input| input.stable_dt);
+        self.state.animate(dt);
         self.drain_events();
         self.poll_picker();
 
@@ -426,10 +437,38 @@ impl eframe::App for App {
                             picker_requested = true;
                         }
 
-                        if !self.state.queue.is_empty() {
+                        if !self.state.queue.is_empty() || self.state.outcome.is_some() {
                             ui.add_space(10.0);
                             theme::section_header(ui, "transferts", None);
                             ui.add_space(6.0);
+                            if let Some(outcome) = self.state.outcome.clone() {
+                                let color = if outcome.ok {
+                                    theme::ACCENT
+                                } else {
+                                    theme::WARN
+                                };
+                                let blink = (ctx.input(|input| input.time) * 5.0).sin() > -0.5;
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        theme::mono(
+                                            if blink {
+                                                if outcome.ok {
+                                                    "+"
+                                                } else {
+                                                    "!"
+                                                }
+                                            } else {
+                                                " "
+                                            },
+                                            12.0,
+                                        )
+                                        .color(color),
+                                    );
+                                    ui.add_space(4.0);
+                                    let width = ui.available_width();
+                                    theme::truncated(ui, &outcome.text, 12.0, color, width);
+                                });
+                            }
                             actions.extend(ui::queue::show(ui, &self.state));
                         }
 
@@ -443,12 +482,18 @@ impl eframe::App for App {
 
         actions.extend(ui::accept::show(ctx, &self.state));
 
+        #[cfg(target_os = "ios")]
+        let ios_destination = droplink_ios_bridge::destination();
+        #[cfg(not(target_os = "ios"))]
+        let ios_destination: Option<String> = None;
+
         if let Some(outcome) = ui::settings::show(
             ctx,
             &mut self.state.settings_open,
             &mut self.settings,
             &self.config,
             &mut self.settings_error,
+            ios_destination.as_deref(),
         ) {
             match outcome {
                 ui::settings::Outcome::Save(config) => {
@@ -463,6 +508,14 @@ impl eframe::App for App {
                     }
                 }
                 ui::settings::Outcome::Close => self.state.settings_open = false,
+                ui::settings::Outcome::PickFolder => {
+                    #[cfg(target_os = "ios")]
+                    droplink_ios_bridge::pick_folder();
+                }
+                ui::settings::Outcome::OpenFiles => {
+                    #[cfg(target_os = "ios")]
+                    droplink_ios_bridge::open_files();
+                }
             }
         }
 
@@ -482,10 +535,10 @@ impl eframe::App for App {
         }
 
         let active = !self.state.queue.is_empty();
-        ctx.request_repaint_after(if active || self.state.toast.is_some() {
-            Duration::from_millis(100)
+        if active || self.state.outcome.is_some() || self.state.toast.is_some() {
+            ctx.request_repaint();
         } else {
-            Duration::from_millis(500)
-        });
+            ctx.request_repaint_after(Duration::from_millis(500));
+        }
     }
 }

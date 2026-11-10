@@ -48,6 +48,7 @@ fn populated_state() -> UiState {
             total: 1024,
             transport: TransportMode::Direct,
             started: Instant::now(),
+            displayed: 0.5,
         },
         TransferRow {
             transfer_id: "t2".into(),
@@ -57,6 +58,7 @@ fn populated_state() -> UiState {
             total: 0,
             transport: TransportMode::Relay,
             started: Instant::now(),
+            displayed: 0.0,
         },
     ];
     state.incoming.insert(
@@ -164,7 +166,7 @@ fn renders_settings_and_validates() {
     let mut open = true;
     let mut error = None;
     let output = ctx.run(RawInput::default(), |ctx| {
-        let _ = ui::settings::show(ctx, &mut open, &mut draft, &base, &mut error);
+        let _ = ui::settings::show(ctx, &mut open, &mut draft, &base, &mut error, None);
     });
     assert!(!output.shapes.is_empty());
 

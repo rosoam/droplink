@@ -15,6 +15,8 @@ pub struct TransferRow {
     pub total: u64,
     pub transport: TransportMode,
     pub started: Instant,
+    /// Smoothed progress used for the animated bar.
+    pub displayed: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +51,19 @@ pub enum UiAction {
 pub enum ToastKind {
     Success,
     Error,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Outcome {
+    pub ok: bool,
+    pub text: String,
+    pub at: Instant,
+}
+
+impl Outcome {
+    pub fn expired(&self) -> bool {
+        self.at.elapsed().as_secs_f32() > 2.0
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,6 +106,7 @@ pub struct UiState {
     pub discovery_available: bool,
     pub settings_open: bool,
     pub toast: Option<Toast>,
+    pub outcome: Option<Outcome>,
     pub history_limit: usize,
 }
 
@@ -100,6 +116,15 @@ impl UiState {
             discovery_available: true,
             history_limit: history_limit.max(1),
             ..Default::default()
+        }
+    }
+
+    /// Click a peer: select it, or unselect it when it is already selected.
+    pub fn toggle_selected(&mut self, key: PeerKey) {
+        if self.selected.as_ref() == Some(&key) {
+            self.selected = None;
+        } else {
+            self.selected = Some(key);
         }
     }
 
@@ -148,6 +173,7 @@ impl UiState {
                         total: 0,
                         transport: TransportMode::Direct,
                         started: Instant::now(),
+                        displayed: 0.0,
                     });
                 }
             }
@@ -165,6 +191,7 @@ impl UiState {
                         total: incoming.file_size,
                         transport: incoming.transport,
                         started: Instant::now(),
+                        displayed: 0.0,
                     });
                 }
                 self.sas
@@ -216,7 +243,20 @@ impl UiState {
                 self.queue.retain(|row| row.transfer_id != transfer_id);
                 self.incoming.remove(&transfer_id);
                 self.sas.remove(&transfer_id);
-                self.toast = Some(Toast::success(format!("{} · transfert terminé", file_name)));
+                self.toast = None;
+                self.outcome = Some(Outcome {
+                    ok: true,
+                    text: format!(
+                        "{} · {}",
+                        file_name,
+                        if direction == Direction::Send {
+                            "envoyé"
+                        } else {
+                            "reçu"
+                        }
+                    ),
+                    at: Instant::now(),
+                });
                 self.push_history(HistoryEntry {
                     file_name,
                     direction,
@@ -234,6 +274,11 @@ impl UiState {
                 self.queue.retain(|row| row.transfer_id != transfer_id);
                 self.incoming.remove(&transfer_id);
                 self.sas.remove(&transfer_id);
+                self.outcome = Some(Outcome {
+                    ok: false,
+                    text: "échec du transfert".to_string(),
+                    at: Instant::now(),
+                });
                 self.toast = Some(Toast::error(reason));
             }
         }
@@ -242,6 +287,25 @@ impl UiState {
     pub fn tick(&mut self) {
         if self.toast.as_ref().map(Toast::expired).unwrap_or(false) {
             self.toast = None;
+        }
+        if self.outcome.as_ref().map(Outcome::expired).unwrap_or(false) {
+            self.outcome = None;
+        }
+    }
+
+    /// Smooth the progress bars towards their target so they advance continuously between events.
+    pub fn animate(&mut self, dt: f32) {
+        let factor = (dt * 14.0).clamp(0.0, 1.0);
+        for row in &mut self.queue {
+            let target = if row.total > 0 {
+                (row.bytes as f32 / row.total as f32).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            row.displayed += (target - row.displayed) * factor;
+            if row.displayed > target {
+                row.displayed = target;
+            }
         }
     }
 
@@ -370,10 +434,8 @@ mod tests {
         assert_eq!(state.history.len(), 1);
         assert!(state.history[0].ok);
         assert_eq!(state.history[0].bytes, 100);
-        assert!(matches!(
-            state.toast.as_ref().map(|toast| toast.kind),
-            Some(ToastKind::Success)
-        ));
+        assert!(state.toast.is_none());
+        assert!(matches!(state.outcome.as_ref(), Some(outcome) if outcome.ok));
     }
 
     #[test]
@@ -507,6 +569,16 @@ mod tests {
         });
         assert!(state.queue.is_empty());
         assert_eq!(state.history.len(), 1);
+    }
+
+    #[test]
+    fn selection_toggles_off_on_second_click() {
+        let mut state = UiState::new(10);
+        let key = PeerKey::Direct("dev-1".into());
+        state.toggle_selected(key.clone());
+        assert_eq!(state.selected, Some(key.clone()));
+        state.toggle_selected(key);
+        assert!(state.selected.is_none());
     }
 
     #[test]

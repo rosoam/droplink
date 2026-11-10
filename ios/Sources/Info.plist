@@ -39,6 +39,8 @@
     </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>DropLink utilise le réseau local pour découvrir les appareils proches et transférer vos fichiers.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>DropLink enregistre les photos et vidéos reçues dans ta photothèque.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_droplink._tcp</string>
