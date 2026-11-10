@@ -122,3 +122,53 @@ arrêtée.
 Tant que le périmètre est Apple, MultipeerConnectivity est la seule voie propre. Si le besoin est
 « deux appareils n'importe où sur Internet », aucune radio ne le fait : il faut un serveur, et le
 relais déjà spécifié reste la réponse.
+
+
+## 7. Contrainte ajoutée : Windows, Linux, macOS + iPhone
+
+Le périmètre est maintenant : ordinateurs Windows/Linux/macOS, téléphones iPhone. MultipeerConnectivity
+ne couvre que les appareils Apple ; il ne peut donc pas être la technologie unique.
+
+| Combinaison | mDNS/TCP LAN | MultipeerConnectivity | Wi-Fi Direct | Bluetooth LE | WebRTC / relais |
+|---|---|---|---|---|---|
+| iPhone ↔ iPhone | oui (même LAN) | oui | non | lent | oui |
+| iPhone ↔ macOS | oui | oui | non | lent | oui |
+| iPhone ↔ Windows | oui (même LAN) | **non** | non | lent | oui |
+| iPhone ↔ Linux | oui (même LAN) | **non** | non | lent | oui |
+| Windows ↔ Linux | oui | non | partiel | lent | oui |
+| Windows ↔ macOS | oui | non | partiel | lent | oui |
+| macOS ↔ macOS | oui | oui | partiel | lent | oui |
+
+Conclusion : dès qu'on inclut Windows et Linux, **aucune radio peer-to-peer native ne couvre tout**.
+Il ne reste que deux familles :
+
+1. **le LAN** (mDNS + TCP), qui marche sur les trois OS et l'iPhone quand tout le monde est sur le
+   même réseau — c'est déjà le cas dans le code ;
+2. **le transport par Internet**, qui exige un rendez-vous : relais applicatif, ou WebRTC avec
+   signaling + STUN/TURN.
+
+### Pas de solution « sans serveur » à distance
+
+- Wi-Fi Direct n'est pas exposé par iOS.
+- L'iPhone ne crée pas de hotspot depuis une app.
+- L'ad-hoc Wi-Fi (IBSS) n'existe pas sur iOS.
+- Le Bluetooth plafonne à quelques Mbps : bon pour appairer, pas pour une photo de 10 Mo.
+- L'UWB ne transporte pas de données.
+- LoRa/satellite : portée énorme, débit dérisoire.
+
+Donc, à distance et sans serveur, il n'y a rien de crédible pour des fichiers. Le choix réel est :
+
+| Approche | Serveur | Quand les données passent | Coût |
+|---|---|---|---|
+| LAN direct | aucun | même réseau | 0 |
+| Relais applicatif | oui, data path | toujours | bande passante |
+| WebRTC + hole punching | signaling + STUN, TURN en secours | P2P la plupart du temps, TURN sinon | signaling quasi nul, TURN en secours |
+| VPN/Tailscale | oui (existant) | toujours | dépend du VPN |
+
+**Recommandation :** garder le LAN direct tel quel (il fonctionne déjà sur macOS, iOS, et compile
+sur Windows/Linux), puis ajouter WebRTC pour Internet. Le relais applicatif déjà spécifié peut
+servir de signaling et de secours TURN, ce qui évite d'exploiter deux infrastructures.
+
+Décision à prendre : accepte-t-on un **petit serveur de signaling** (quelques kilo-octets par
+connexion, pas les fichiers) ? Si non, la seule alternative à distance reste le VPN ou la
+redirection de port manuelle.
