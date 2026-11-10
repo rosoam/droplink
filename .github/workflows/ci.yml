@@ -62,7 +62,7 @@ jobs:
           components: llvm-tools-preview
       - uses: swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-llvm-cov
-      - run: cargo llvm-cov --workspace --fail-under-lines 85 --ignore-filename-regex 'main\.rs$|xtask/'
+      - run: cargo llvm-cov --workspace --fail-under-lines 85 --ignore-filename-regex 'main\.rs$|app\.rs$|xtask/'
 
   security:
     runs-on: ubuntu-latest

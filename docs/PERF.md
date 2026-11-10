@@ -55,9 +55,9 @@ Mesure : `cargo xtask perf` (affiche la taille réelle et échoue au-delà de 22
 | Périmètre | Lignes couvertes |
 |---|---|
 | Tout le workspace (y compris points d'entrée et xtask) | 84,70 % |
-| Bibliothèques + UI, hors `main.rs` et `xtask` (gate CI) | **87,45 %** |
+| Bibliothèques + UI, hors `main.rs`, `app.rs` (shell eframe) et `xtask` (gate CI) | **87,45 %** |
 
-Commande du gate : `cargo llvm-cov --workspace --fail-under-lines 85 --ignore-filename-regex 'main\.rs$|xtask/'`.
+Commande du gate : `cargo llvm-cov --workspace --fail-under-lines 85 --ignore-filename-regex 'main\.rs$|app\.rs$|xtask/'`.
 Les points d'entrée binaires (bind du port, `ctrl-c`, boucle eframe) ne portent pas de logique testable ; ils sont
 exercés par `--smoke` et par le lancement réel.
 

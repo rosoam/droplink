@@ -187,6 +187,24 @@ fn renders_settings_and_validates() {
 }
 
 #[test]
+fn renders_toast_and_helpers() {
+    let ctx = egui::Context::default();
+    crate::theme::apply(&ctx);
+    let output = ctx.run(RawInput::default(), |ctx| {
+        crate::theme::toast(ctx, "erreur", true);
+        crate::theme::toast(ctx, "ok", false);
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let _ = crate::theme::progress_bar(0.5, 10);
+            crate::theme::truncated(ui, "nom très long", 12.0, crate::theme::TEXT, 40.0);
+            crate::theme::key_value(ui, "fichier", "x.bin");
+        });
+    });
+    assert!(!output.shapes.is_empty());
+    assert_eq!(crate::theme::progress_bar(0.0, 4), "[····]");
+    assert_eq!(crate::theme::progress_bar(1.0, 4), "[████]");
+}
+
+#[test]
 fn formats_bytes_across_units() {
     assert_eq!(ui::format_bytes(10), "10 o");
     assert_eq!(ui::format_bytes(2048), "2.0 Ko");

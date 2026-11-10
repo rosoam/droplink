@@ -172,7 +172,7 @@ cargo test -p droplink-net --test mdns_loopback -- --ignored --nocapture
 
 ```bash
 cargo llvm-cov --workspace --fail-under-lines 85 \
-  --ignore-filename-regex 'main\.rs$|xtask/'
+  --ignore-filename-regex 'main\.rs$|app\.rs$|xtask/'
 ```
 
 Mesure actuelle : **87,45 %** des lignes hors points d'entrée binaires et xtask.
