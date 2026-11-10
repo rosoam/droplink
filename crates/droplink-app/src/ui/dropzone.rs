@@ -42,7 +42,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut UiState, hovering: bool) -> bool {
                     }
                 }
                 ui.add_space(4.0);
-                if ui.button("Choisir un fichier…").clicked() && selected.is_some() {
+                if ui.button("Choisir un fichier…").clicked() {
                     picker = true;
                 }
             });

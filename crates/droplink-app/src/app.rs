@@ -163,7 +163,14 @@ impl App {
 
     fn dispatch(&self, action: UiAction) {
         match action {
-            UiAction::Send { peer, path } => self.handle.command(Command::Send { peer, path }),
+            UiAction::Send { peer, path } => {
+                tracing::info!(
+                    alias = %peer.alias,
+                    path = %path.display(),
+                    "send requested"
+                );
+                self.handle.command(Command::Send { peer, path })
+            }
             UiAction::Respond {
                 transfer_id,
                 accept,
@@ -189,6 +196,7 @@ impl App {
 
     #[cfg(target_os = "ios")]
     fn open_picker(&mut self) {
+        tracing::info!("opening document picker");
         droplink_ios_bridge::pick_file();
     }
 
@@ -216,6 +224,27 @@ impl App {
         for _ in 0..2000 {
             match self.events.try_recv() {
                 Ok(event) => {
+                    match &event {
+                        Event::Queued { file_name, .. } => {
+                            tracing::info!(%file_name, "queued")
+                        }
+                        Event::Incoming(incoming) => tracing::info!(
+                            alias = %incoming.sender_alias,
+                            file = %incoming.file_name,
+                            "incoming request"
+                        ),
+                        Event::Completed { file_name, transport, .. } => {
+                            tracing::info!(%file_name, ?transport, "transfer completed")
+                        }
+                        Event::Failed { file_name, reason, .. } => {
+                            tracing::warn!(%file_name, %reason, "transfer failed")
+                        }
+                        Event::Sas { code, .. } => tracing::info!(%code, "sas"),
+                        Event::DevicesChanged(peers) => {
+                            tracing::info!(count = peers.len(), "devices changed")
+                        }
+                        _ => {}
+                    }
                     let touches_history =
                         matches!(event, Event::Completed { .. } | Event::Failed { .. });
                     self.state.apply(event);
@@ -257,6 +286,7 @@ impl eframe::App for App {
             }
             let picked = droplink_ios_bridge::take_picked_files();
             if !picked.is_empty() {
+                tracing::info!(count = picked.len(), "ios files picked");
                 match self.state.selected_peer().cloned() {
                     Some(peer) => {
                         for path in picked {
@@ -371,7 +401,12 @@ impl eframe::App for App {
             self.dispatch(action);
         }
         if picker_requested {
-            self.open_picker();
+            if self.state.selected_peer().is_none() {
+                self.state.last_error =
+                    Some("Sélectionne d'abord un appareil dans la liste".into());
+            } else {
+                self.open_picker();
+            }
         }
 
         let active = !self.state.queue.is_empty();
