@@ -15,6 +15,11 @@ ios/                    projet Xcode (xcodegen)
 - Découverte : mDNS (`mdns-sd`) **et** Bonjour (`NSNetService` pour publier, `NWBrowser` pour parcourir).
 - Sélection de fichier : `UIDocumentPickerViewController` via Swift, copie dans le sandbox puis envoi.
 - Réception : `Documents/DropLink` (visible dans Fichiers grâce à `UIFileSharingEnabled`).
+- **Destination** : sélecteur natif de dossier (`UIDocumentPicker` mode folder), mémorisé par bookmark.
+  `cfg → Destination → [ choisir ]`, et `[ fichiers ]` ouvre l'app Fichiers.
+- **Export automatique** : images et vidéos → **Photos** (`NSPhotoLibraryAddUsageDescription`) ; le reste →
+  copié dans le dossier choisi (ou `Documents/DropLink` si aucun). La copie de travail reste dans Documents
+  pour que l'historique puisse toujours ouvrir le fichier.
 
 ## Prérequis
 
@@ -95,6 +100,16 @@ xcrun devicectl device copy from --device <UDID> \
   --source "Library/Application Support/DropLink/droplink.log" \
   --destination ios.log
 ```
+
+## Dépannage iOS
+
+| Symptôme | Cause | Solution |
+|---|---|---|
+| `Operation not permitted` à la réception | chemin de sandbox d'une ancienne installation | corrigé : le dossier est recalculé à chaque démarrage |
+| Le fichier n'est pas dans Fichiers | `Documents` vide ou app non visible | `UIFileSharingEnabled` est activé ; chercher `Sur mon iPhone > DropLink` |
+| Photos ne reçoit rien | permission « Ajouter des photos » refusée | Réglages → DropLink → Photos → Ajouter |
+| Aucun pair | iPhone et Mac sur deux réseaux différents | même routeur Wi-Fi, pas le partage de connexion |
+| Profil non approuvé | première installation | Réglages → Général → VPN et gestion de l'appareil → Faire confiance |
 
 ## Limites connues
 
