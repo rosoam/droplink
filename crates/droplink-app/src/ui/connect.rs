@@ -5,6 +5,10 @@ use droplink_core::relay::{display_code, normalize_code, now_secs};
 use eframe::egui;
 use std::net::{IpAddr, SocketAddr};
 
+/// Flip to `true` when the WebRTC transport is wired: the code tab then creates a remote
+/// session. Until then, only the local device list and the manual address are useful.
+pub const REMOTE_READY: bool = false;
+
 fn tab(ui: &mut egui::Ui, label: &str, active: bool) -> egui::Response {
     if active {
         theme::compact_primary(ui, label)
@@ -27,7 +31,7 @@ pub fn show(ctx: &egui::Context, state: &mut UiState) -> Vec<UiAction> {
             if tab(ui, "appareils", state.connect_tab == ConnectTab::Pairs).clicked() {
                 state.connect_tab = ConnectTab::Pairs;
             }
-            if tab(ui, "code", state.connect_tab == ConnectTab::Code).clicked() {
+            if REMOTE_READY && tab(ui, "code", state.connect_tab == ConnectTab::Code).clicked() {
                 state.connect_tab = ConnectTab::Code;
             }
             if tab(ui, "adresse", state.connect_tab == ConnectTab::Direct).clicked() {
@@ -54,7 +58,7 @@ fn pairs_tab(ui: &mut egui::Ui, state: &mut UiState) {
     ui.label(
         theme::mono(
             if state.devices.is_empty() {
-                "crée un code (onglet code) ou saisis une adresse."
+                "aucun appareil — onglet adresse pour en ajouter un."
             } else {
                 "clique un appareil pour l'utiliser."
             },

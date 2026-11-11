@@ -250,3 +250,17 @@ le même domaine, mais restent deux routes distinctes.
    l'identité DTLS.
 
 Une fois 1 et 2 tranchés, la phase 0 peut commencer sans dépendance externe.
+
+## 14. Résultat du spike (2026-11-11)
+
+- Deux pairs `webrtc-rs` dans un process, SDP en mémoire, candidats host : **10 Mio en 1,13 s
+  (8,9 Mio/s), BLAKE3 identique**.
+- `webrtc-rs 0.21` **ne compile pas pour iOS** : `rtc-shared` dépend de `nix`, qui référence
+  `libc::SYSPROTO_CONTROL` (macOS seulement).
+- `str0m 0.25` **compile pour `aarch64-apple-ios`**.
+
+Décision qui en découle : soit `str0m` partout (sans-IO, un seul stack, plus de travail
+d'intégration), soit `webrtc-rs` sur desktop + `str0m`/libwebrtc sur iOS (deux stacks). La première
+option est plus saine pour un produit multi-plateforme.
+
+Code des spikes : `spikes/webrtc-data`, `spikes/str0m-check`. Aucun serveur, aucun coût.

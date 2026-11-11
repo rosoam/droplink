@@ -1,0 +1,10 @@
+[package]
+name = "str0m-check"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+str0m = "0.25"
+
+[workspace]

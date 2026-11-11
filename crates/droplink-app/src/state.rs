@@ -188,8 +188,12 @@ impl UiState {
     /// Open the connection dialog on the most useful tab: the active code, the device list,
     /// or the code form when no device is known yet.
     pub fn open_connect(&mut self) {
-        self.connect_tab = if self.session.is_some() || self.devices.is_empty() {
+        self.connect_tab = if self.session.is_some() {
             ConnectTab::Code
+        } else if self.devices.is_empty() {
+            // Remote sessions are off; with no device known, the address tab is the only
+            // useful one.
+            ConnectTab::Direct
         } else {
             ConnectTab::Pairs
         };

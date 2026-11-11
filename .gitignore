@@ -25,3 +25,7 @@
 /ios/build-device
 /ios/lib
 /ios/DropLink.xcodeproj
+
+# spikes build artifacts and local logs
+spikes/**/target
+.logs/
