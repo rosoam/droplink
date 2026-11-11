@@ -267,3 +267,6 @@ Code des spikes : `spikes/webrtc-data`, `spikes/str0m-check`. Aucun serveur, auc
 
 Le plan d'exécution pas à pas (S00–S08, dépendances, critères) est dans
 [`plans/2026-11-11-webrtc-remote.md`](../plans/2026-11-11-webrtc-remote.md).
+
+Les extensions possibles (messagerie, appels, groupes) et leurs coûts sont documentées
+dans [`EVOLUTIONS.md`](EVOLUTIONS.md).

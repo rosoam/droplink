@@ -227,7 +227,7 @@ voit ni nom de fichier ni contenu. Le direct reste prioritaire quand les deux ap
 le même réseau.
 
 Déploiement : voir `deploy/README.md` (systemd + Caddy WSS). Spécification, limites et coûts :
-`docs/RELAY-SPEC.md`. Transport Internet P2P : `docs/WEBRTC-PLAN.md`. iPhone ↔ Windows/Linux : `docs/CROSS-PLATFORM.md`. Détails : `docs/REMOTE.md`.
+`docs/RELAY-SPEC.md`. Transport Internet P2P : `docs/WEBRTC-PLAN.md`. iPhone ↔ Windows/Linux : `docs/CROSS-PLATFORM.md`. Messagerie et appels : `docs/EVOLUTIONS.md`. Détails : `docs/REMOTE.md`.
 
 ---
 
