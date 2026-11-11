@@ -264,3 +264,6 @@ d'intégration), soit `webrtc-rs` sur desktop + `str0m`/libwebrtc sur iOS (deux 
 option est plus saine pour un produit multi-plateforme.
 
 Code des spikes : `spikes/webrtc-data`, `spikes/str0m-check`. Aucun serveur, aucun coût.
+
+Le plan d'exécution pas à pas (S00–S08, dépendances, critères) est dans
+[`plans/2026-11-11-webrtc-remote.md`](../plans/2026-11-11-webrtc-remote.md).
