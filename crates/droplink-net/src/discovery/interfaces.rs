@@ -103,6 +103,21 @@ pub fn is_personal_hotspot(ip: &Ipv4Addr) -> bool {
     octets[0] == 172 && octets[1] == 20 && octets[2] == 10 && octets[3] < 16
 }
 
+/// The iPhone Personal Hotspot gateway for a client address (`172.20.10.0/28`).
+///
+/// A client on the hotspot cannot receive the iPhone's mDNS announcement reliably, but it can
+/// dial the gateway directly. The iPhone listens on `HOTSPOT_PROBE_PORT`.
+pub fn personal_hotspot_gateway(ip: &Ipv4Addr) -> Option<Ipv4Addr> {
+    if is_personal_hotspot(ip) {
+        Some(Ipv4Addr::new(172, 20, 10, 1))
+    } else {
+        None
+    }
+}
+
+/// Fixed port the iOS app tries to bind, so hotspot clients can probe it without mDNS.
+pub const HOTSPOT_PROBE_PORT: u16 = 7777;
+
 /// Enumerate the host interfaces through `if-addrs`.
 pub fn system_interfaces() -> Vec<Iface> {
     match if_addrs::get_if_addrs() {
@@ -169,6 +184,18 @@ mod tests {
         assert_eq!(
             select_advertisable_ip(&ifaces),
             Some(Ipv4Addr::new(192, 168, 1, 2))
+        );
+    }
+
+    #[test]
+    fn hotspot_gateway_is_derived_from_a_client_address() {
+        assert_eq!(
+            personal_hotspot_gateway(&Ipv4Addr::new(172, 20, 10, 7)),
+            Some(Ipv4Addr::new(172, 20, 10, 1))
+        );
+        assert_eq!(
+            personal_hotspot_gateway(&Ipv4Addr::new(192, 168, 1, 7)),
+            None
         );
     }
 

@@ -3,8 +3,10 @@ use crate::store::{self, Paths};
 use crate::theme;
 use crate::ui;
 use droplink_core::config::Config;
-use droplink_core::peer::Source;
-use droplink_net::discovery::{advert_for, DiscoveryEvent, DiscoveryHandle};
+use droplink_core::peer::{Peer, Reach, Source};
+use droplink_net::discovery::{
+    advert_for, personal_hotspot_gateway, DiscoveryEvent, DiscoveryHandle, HOTSPOT_PROBE_PORT,
+};
 use droplink_net::engine::{spawn, Command, EngineConfig, EngineHandle, Event};
 use std::path::PathBuf;
 use std::sync::mpsc as std_mpsc;
@@ -72,6 +74,17 @@ impl App {
                 state.discovery_available = false;
                 tracing::warn!("no advertisable IPv4, mDNS disabled");
             }
+            // Hotspot clients often cannot receive the iPhone's mDNS announcement. The iPhone
+            // listens on a fixed TCP port, so the gateway itself is a reliable discovery point.
+            if let Some(spec) = &spec {
+                if let Some(gateway) = personal_hotspot_gateway(&spec.ip) {
+                    if gateway != spec.ip {
+                        let handle = handle.clone();
+                        rt.spawn(async move { probe_hotspot(handle, gateway).await });
+                    }
+                }
+            }
+
             let discovery = rt
                 .block_on(async { DiscoveryHandle::start(spec, dtx) })
                 .ok();
@@ -318,6 +331,39 @@ impl App {
                 theme::ACCENT,
             )
         }
+    }
+}
+
+/// Probe the iPhone hotspot gateway on the fixed DropLink port.
+///
+/// We only need to know that the port accepts a connection; the real handshake happens when a
+/// file is sent. Retrying every five seconds covers the case where the iPhone app starts later.
+async fn probe_hotspot(handle: EngineHandle, gateway: std::net::Ipv4Addr) {
+    let target = std::net::SocketAddr::from((gateway, HOTSPOT_PROBE_PORT));
+    loop {
+        let reachable = tokio::time::timeout(
+            Duration::from_secs(1),
+            tokio::net::TcpStream::connect(target),
+        )
+        .await
+        .map(|result| result.is_ok())
+        .unwrap_or(false);
+        if reachable {
+            tracing::info!(%target, "hotspot gateway answers on the DropLink port");
+            handle.command(Command::PeerSeen {
+                peer: Peer {
+                    device_id: None,
+                    alias: "iPhone".into(),
+                    reach: Reach::Direct {
+                        ip: std::net::IpAddr::V4(gateway),
+                        port: HOTSPOT_PROBE_PORT,
+                    },
+                },
+                source: Source::Manual,
+            });
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 

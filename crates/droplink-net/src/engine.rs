@@ -450,7 +450,15 @@ pub fn spawn(cfg: EngineConfig) -> Result<(EngineHandle, Bound, mpsc::Receiver<E
     if cfg.max_parallel == 0 || cfg.max_parallel > 32 {
         return Err(Error::Protocol("max_parallel out of range".into()));
     }
-    let std_listener = std::net::TcpListener::bind(("0.0.0.0", cfg.port_pref.unwrap_or(0)))?;
+    let requested = cfg.port_pref.unwrap_or(0);
+    let std_listener = match std::net::TcpListener::bind(("0.0.0.0", requested)) {
+        Ok(listener) => listener,
+        Err(err) if requested != 0 => {
+            tracing::warn!(port = requested, error = %err, "preferred port unavailable, using a random one");
+            std::net::TcpListener::bind(("0.0.0.0", 0))?
+        }
+        Err(err) => return Err(err.into()),
+    };
     std_listener.set_nonblocking(true)?;
     let listener = TcpListener::from_std(std_listener)?;
     let port = listener.local_addr()?.port();

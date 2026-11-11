@@ -102,6 +102,13 @@ pub fn load_or_create_for(paths: &Paths) -> Config {
     {
         config.receive_dir = default_receive_dir();
     }
+    // The iOS app prefers a fixed port so a hotspot client can probe 172.20.10.1:7777 without
+    // mDNS. `spawn` falls back to a random port if it is taken.
+    #[cfg(target_os = "ios")]
+    if config.port_pref.is_none() {
+        config.port_pref = Some(droplink_net::discovery::HOTSPOT_PROBE_PORT);
+    }
+
     if std::fs::create_dir_all(&config.receive_dir).is_err() {
         config.receive_dir = default_receive_dir();
         let _ = std::fs::create_dir_all(&config.receive_dir);
