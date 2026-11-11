@@ -52,6 +52,13 @@ jobs:
       - name: Build (release)
         run: cargo build --workspace --release
 
+      - name: Check macOS binary size (< 22 MiB)
+        if: runner.os == 'macOS'
+        run: |
+          SIZE=$(stat -f%z target/release/droplink)
+          echo "binary bytes: $SIZE"
+          test "$SIZE" -lt 23068672
+
       - name: Stage desktop binary
         shell: bash
         run: |
@@ -112,16 +119,3 @@ jobs:
         with:
           command: check advisories licenses sources bans
 
-  size-gate:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
-      - name: Build release binary
-        run: cargo build --release -p droplink-app
-      - name: Check binary size (< 22 MiB)
-        run: |
-          SIZE=$(stat -f%z target/release/droplink)
-          echo "binary bytes: $SIZE"
-          test "$SIZE" -lt 23068672
