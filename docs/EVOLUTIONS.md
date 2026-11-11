@@ -1,5 +1,8 @@
 # Évolutions possibles — du transfert de fichiers au messager et à la voix
 
+> **Document exploratoire, hors périmètre du plan WebRTC actuel.** Il sert à savoir où le socle
+> pourrait aller ; aucune de ces évolutions n'est planifiée ni engagée.
+
 > Ce document décrit ce que le socle DropLink peut devenir, ce qu'il faut construire pour chaque
 > étape, ce que ça coûte, et ce qui reste hors de portée à court terme. Il ne remplace pas le plan
 > WebRTC (`WEBRTC-PLAN.md`) : il montre où ce plan mène.
