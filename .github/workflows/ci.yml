@@ -48,6 +48,21 @@ jobs:
       - name: Build (release)
         run: cargo build --workspace --release
 
+      - name: Stage desktop binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          case "${{ runner.os }}" in
+            Windows) cp target/release/droplink.exe dist/droplink-windows-x86_64.exe ;;
+            macOS) cp target/release/droplink dist/droplink-macos-aarch64 ;;
+            Linux) cp target/release/droplink dist/droplink-linux-x86_64 ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: droplink-${{ runner.os }}
+          path: dist/*
+
 
   coverage:
     runs-on: ubuntu-latest

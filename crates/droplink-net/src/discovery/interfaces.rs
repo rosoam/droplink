@@ -9,10 +9,30 @@ pub struct Iface {
 }
 
 const EXCLUDED_PREFIXES: &[&str] = &[
-    "utun", "tun", "tap", "docker", "vmnet", "vboxnet", "awdl", "llw", "veth", "br-",
+    "utun",
+    "tun",
+    "tap",
+    "docker",
+    "vmnet",
+    "vboxnet",
+    "awdl",
+    "llw",
+    "veth",
+    "br-",
+    // Windows Hyper-V/WSL and Linux virtual bridges. They are private addresses that would
+    // otherwise win over the real Wi-Fi/Ethernet and make peers dial an unreachable host.
+    "vethernet",
+    "virbr",
+    "tailscale",
+    "zt",
+    "wg",
+    "ham",
+    "podman",
     // Cellular. Advertising the 3G/4G address in Bonjour makes peers dial an address that is
     // not reachable from the local link (and can make the publish itself fail).
-    "pdp_ip", "cellular", "rmnet",
+    "pdp_ip",
+    "cellular",
+    "rmnet",
 ];
 
 /// Interface-name preference, added to the address score.
@@ -168,6 +188,32 @@ mod tests {
     fn vpn_only_returns_none() {
         let ifaces = vec![iface("lo0", [127, 0, 0, 1]), iface("utun3", [10, 8, 0, 2])];
         assert_eq!(select_advertisable_ip(&ifaces), None);
+    }
+
+    #[test]
+    fn windows_hyperv_and_wsl_are_ignored() {
+        let ifaces = vec![
+            iface("vEthernet (Default Switch)", [172, 20, 0, 1]),
+            iface("vEthernet (WSL)", [172, 28, 0, 1]),
+            iface("Wi-Fi", [192, 168, 1, 20]),
+        ];
+        assert_eq!(
+            select_advertisable_ip(&ifaces),
+            Some(Ipv4Addr::new(192, 168, 1, 20))
+        );
+    }
+
+    #[test]
+    fn linux_virtual_bridges_are_ignored() {
+        let ifaces = vec![
+            iface("virbr0", [192, 168, 122, 1]),
+            iface("tailscale0", [100, 64, 0, 1]),
+            iface("wlp3s0", [192, 168, 1, 30]),
+        ];
+        assert_eq!(
+            select_advertisable_ip(&ifaces),
+            Some(Ipv4Addr::new(192, 168, 1, 30))
+        );
     }
 
     #[test]
